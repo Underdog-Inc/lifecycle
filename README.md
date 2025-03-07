@@ -22,6 +22,6 @@ lifecycle is a tool that transforms pull requests into ephemeral development env
 **Note:**  
 This repository is a placeholder used to gauge community interest. During this time, the codebase is being refined, documentation improved, and the project optimized for deployment in a variety of environments.
 
-If you're curious or have any questions, please check out [this issue](https://github.com/GoodRxOSS/lifecycle/issues/1) and join the conversation. Give it a thumbs up if you're interested!
+Drop a star if you're curious. If you have any questions, please check out [this issue](https://github.com/GoodRxOSS/lifecycle/issues/1) and join the conversation. Give it a thumbs up if you're interested!
 
 Happy coding!
