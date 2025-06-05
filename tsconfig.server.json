@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "outDir": ".next",
+    "noEmit": false,
+    "isolatedModules": false,
+    "jsx": "preserve",
+    "lib": ["es2022"],
+    "baseUrl": "."
+  },
+  "include": [
+    "ws-server.ts",
+    "src/server/lib/k8sStreamer.ts",
+    "src/server/lib/logger.ts",
+    "src/shared/config.ts",
+    "next.config.js"
+  ]
+}

@@ -1,0 +1,152 @@
+# Copyright 2025 GoodRx, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+global:
+  image:
+    repository: lifecycle-app
+    tag: dev
+    pullPolicy: Never
+  imagePullSecrets: []
+  serviceAccount:
+    create: true
+    name: 'runtime-sa'
+  podSecurityContext:
+    fsGroup: 2000
+  securityContext:
+    readOnlyRootFilesystem: false
+    runAsNonRoot: false
+  env:
+    # Add any global env vars here if needed
+    - name: PORT
+      value: '80'
+  envFrom:
+    - secretRef:
+        name: app-secrets
+
+components:
+  web:
+    enabled: true
+    fullnameOverride: 'lifecycle-web'
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 80
+      targetPort: 80
+    ingress:
+      enabled: false
+    deployment:
+      replicaCount: 1
+      extraEnv:
+        - name: JOB_VERSION
+          value: default
+        - name: ENVIRONMENT
+          value: dev
+        - name: STAGE
+          value: stage
+        - name: PINO_PRETTY
+          value: 'false'
+        - name: LOG_LEVEL
+          value: debug
+        - name: NODE_ENV
+          value: development
+        - name: APP_ENV
+          value: staging
+        - name: LIFECYCLE_MODE
+          value: web
+        - name: PORT
+          value: '80'
+      ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+      livenessProbe:
+        httpGet:
+          path: /api/health
+          port: 80
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        failureThreshold: 6
+      readinessProbe:
+        httpGet:
+          path: /api/health
+          port: 80
+        periodSeconds: 5
+        failureThreshold: 3
+
+  worker:
+    enabled: true
+    fullnameOverride: 'lifecycle-worker'
+    service:
+      enabled: false
+    ingress:
+      enabled: false
+    deployment:
+      replicaCount: 2
+      extraEnv:
+        - name: JOB_VERSION
+          value: default
+        - name: ENVIRONMENT
+          value: staging
+        - name: STAGE
+          value: stage
+        - name: PINO_PRETTY
+          value: 'false'
+        - name: LOG_LEVEL
+          value: debug
+        - name: NODE_ENV
+          value: development
+        - name: APP_ENV
+          value: staging
+        - name: AWS_REGION
+          value: 'us-west-2'
+        - name: AWS_PROFILE
+          value: REPLACE_ME_WITH_AWS_PROFILE
+        - name: LIFECYCLE_MODE
+          value: job
+        - name: PORT
+          value: '80'
+        - name: MAX_GITHUB_API_REQUEST
+          value: '250'
+        - name: GITHUB_API_REQUEST_INTERVAL
+          value: '10000'
+        - name: LIFECYCLE_UI_HOSTHAME_WITH_SCHEME
+          value: 'http://localhost:8000'
+      ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+      livenessProbe:
+        httpGet:
+          path: /api/health
+          port: 80
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        failureThreshold: 12
+        timeoutSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /api/jobs
+          port: 80
+        periodSeconds: 10
+        failureThreshold: 10
+        timeoutSeconds: 10
+
+postgresql:
+  enabled: false
+
+redis:
+  enabled: false
+
+rbac:
+  create: true
