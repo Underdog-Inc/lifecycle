@@ -87,6 +87,7 @@ export type LifecycleDefaults = {
   deployCluster: string;
   helmDeployPipeline: string;
   ingressClassName?: string;
+  serviceAccountName?: string;
 };
 
 export type PublicChart = {

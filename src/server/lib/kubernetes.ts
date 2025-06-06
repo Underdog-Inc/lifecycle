@@ -142,29 +142,56 @@ export async function createOrUpdateNamespace({
   }
 }
 
-export async function annotateDefaultServiceAccount({ namespace, role }: { namespace: string; role: string }) {
+export async function annotateServiceAccount({ namespace, role }: { namespace: string; role: string }) {
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
   const client = kc.makeApiClient(k8s.CoreV1Api);
 
+  // Get the service account name from global config
+  const { lifecycleDefaults } = await GlobalConfigService.getInstance().getAllConfigs();
+  const serviceAccountName = lifecycleDefaults?.serviceAccountName || 'default';
+
   const serviceAccountExists = async () => {
     try {
-      const saResponse = await client.readNamespacedServiceAccount('default', namespace);
+      const saResponse = await client.readNamespacedServiceAccount(serviceAccountName, namespace);
       return Boolean(saResponse?.body);
     } catch (error) {
       return false;
     }
   };
 
-  // Wait until the default service account exists in the given namespace
-  try {
-    await waitUntil(serviceAccountExists, {
-      timeoutMs: 120000,
-      intervalMs: 2000,
-    });
-  } catch (error) {
-    logger.error(`[NS ${namespace}] Timeout waiting for default service account to exist: ${error}`);
-    throw error;
+  // If it's not the default service account, create it first
+  if (serviceAccountName !== 'default') {
+    const serviceAccountManifest = {
+      apiVersion: 'v1',
+      kind: 'ServiceAccount',
+      metadata: {
+        name: serviceAccountName,
+        namespace,
+      },
+    };
+
+    try {
+      // Check if service account already exists
+      if (!(await serviceAccountExists())) {
+        await client.createNamespacedServiceAccount(namespace, serviceAccountManifest);
+        logger.debug(`[NS ${namespace}] Created service account ${serviceAccountName}`);
+      }
+    } catch (err) {
+      logger.error(`[NS ${namespace}] Error creating service account ${serviceAccountName}: ${err}`);
+      throw err;
+    }
+  } else {
+    // Wait until the default service account exists in the given namespace
+    try {
+      await waitUntil(serviceAccountExists, {
+        timeoutMs: 120000,
+        intervalMs: 2000,
+      });
+    } catch (error) {
+      logger.error(`[NS ${namespace}] Timeout waiting for ${serviceAccountName} service account to exist: ${error}`);
+      throw error;
+    }
   }
 
   // patch the service account with the role
@@ -178,7 +205,7 @@ export async function annotateDefaultServiceAccount({ namespace, role }: { names
 
   try {
     await client.patchNamespacedServiceAccount(
-      'default', // service account name
+      serviceAccountName, // service account name
       namespace, // namespace
       patch, // patch payload
       undefined, // pretty
@@ -188,9 +215,9 @@ export async function annotateDefaultServiceAccount({ namespace, role }: { names
       undefined, // force
       { headers: { 'Content-Type': 'application/merge-patch+json' } } // patch options
     );
-    logger.debug(`[NS ${namespace}] Annotated default service account in namespace ${namespace}`);
+    logger.debug(`[NS ${namespace}] Annotated ${serviceAccountName} service account in namespace ${namespace}`);
   } catch (err) {
-    logger.error(`[NS ${namespace}] Error annotating service account: ${err}`);
+    logger.error(`[NS ${namespace}] Error annotating service account ${serviceAccountName}: ${err}`);
     throw err;
   }
 }
