@@ -102,7 +102,11 @@ export default class IngressService extends BaseService {
     const { lifecycleDefaults } = await GlobalConfigService.getInstance().getAllConfigs();
     const manifests = configurations.map((configuration) => {
       return yaml.dump(
-        this.generateNginxManifestForConfiguration({ configuration, defaultUUID: lifecycleDefaults?.defaultUUID }),
+        this.generateNginxManifestForConfiguration({
+          configuration,
+          defaultUUID: lifecycleDefaults?.defaultUUID,
+          ingressClassName: lifecycleDefaults?.ingressClassName
+        }),
         {
           skipInvalid: true,
         }
@@ -117,13 +121,17 @@ export default class IngressService extends BaseService {
   /**
    * Generates an nginx manifest for an ingress configuration
    * @param configuration the ingress configuration that describes a deploy object
+   * @param defaultUUID the default UUID from global configuration
+   * @param ingressClassName the ingress class name from global configuration (defaults to 'nginx' if not set)
    */
   private generateNginxManifestForConfiguration = ({
     configuration,
     defaultUUID,
+    ingressClassName,
   }: {
     configuration: IngressConfiguration;
     defaultUUID: string;
+    ingressClassName?: string;
   }) => {
     const annotations = {
       ...configuration.ingressAnnotations,
@@ -143,7 +151,7 @@ export default class IngressService extends BaseService {
       },
       spec: {
         rules: this.generateRulesForManifest(configuration),
-        ingressClassName: 'nginx',
+        ingressClassName: ingressClassName || 'nginx',
       },
     };
   };

@@ -86,6 +86,7 @@ export type LifecycleDefaults = {
   deployNamespace: string;
   deployCluster: string;
   helmDeployPipeline: string;
+  ingressClassName?: string;
 };
 
 export type PublicChart = {
