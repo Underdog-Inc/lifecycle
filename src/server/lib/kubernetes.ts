@@ -142,7 +142,7 @@ export async function createOrUpdateNamespace({
   }
 }
 
-export async function annotateServiceAccount({ namespace, role }: { namespace: string; role: string }) {
+export async function createAndAnnotateServiceAccount({ namespace, role }: { namespace: string; role: string }) {
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
   const client = kc.makeApiClient(k8s.CoreV1Api);

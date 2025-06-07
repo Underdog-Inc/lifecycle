@@ -911,7 +911,7 @@ export default class BuildService extends BaseService {
         const serviceAccountName = lifecycleDefaults?.serviceAccountName || 'default';
         // create namespace and annotate the service account
         await k8s.createOrUpdateNamespace({ name: build.namespace, buildUUID: build.uuid, staticEnv: build.isStatic });
-        await k8s.annotateServiceAccount({
+        await k8s.createOrUpdateServiceAccount({
           namespace: build.namespace,
           role: serviceAccount?.role,
         });
