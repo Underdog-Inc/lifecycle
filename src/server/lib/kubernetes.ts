@@ -494,11 +494,13 @@ export function generateManifest({
   deploys,
   uuid,
   namespace,
+  serviceAccountName,
 }: {
   build: Build;
   deploys: Deploy[];
   uuid: string;
   namespace: string;
+  serviceAccountName: string;
 }) {
   // External Service only deployment
 
@@ -518,7 +520,7 @@ export function generateManifest({
   // General Deployment
 
   const disks = generatePersistentDisks(kubernetesDeploys, uuid, build.enableFullYaml, namespace);
-  const builds = generateDeployManifests(build, kubernetesDeploys, uuid, build.enableFullYaml, namespace);
+  const builds = generateDeployManifests(build, kubernetesDeploys, uuid, build.enableFullYaml, namespace, serviceAccountName);
   const nodePorts = generateNodePortManifests(kubernetesDeploys, uuid, build.enableFullYaml, namespace);
   const grpcMappings = generateGRPCMappings(kubernetesDeploys, uuid, build.enableFullYaml, namespace);
   const loadBalancers = generateLoadBalancerManifests(kubernetesDeploys, uuid, build.enableFullYaml, namespace);
@@ -671,8 +673,10 @@ export function generateDeployManifests(
   deploys: Deploy[],
   buildUUID: string,
   enableFullYaml: boolean,
-  namespace: string
+  namespace: string,
+  serviceAccountName: string
 ) {
+
   return deploys
     .filter((deploy) => {
       return deploy.active;
@@ -1087,6 +1091,7 @@ export function generateDeployManifests(
                 securityContext: {
                   fsGroup: 2000,
                 },
+                serviceAccountName,
                 containers,
                 initContainers,
                 volumes,
