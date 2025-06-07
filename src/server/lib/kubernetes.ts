@@ -150,7 +150,6 @@ export async function createOrUpdateServiceAccount({ namespace, role }: { namesp
   // Get the service account name from global config
   const { lifecycleDefaults } = await GlobalConfigService.getInstance().getAllConfigs(true);
   const serviceAccountName = lifecycleDefaults?.serviceAccountName || 'default';
-  logger.info(`[ALERT::: service-account-annotation for ${serviceAccountName}`);
 
   const serviceAccountExists = async () => {
     try {
