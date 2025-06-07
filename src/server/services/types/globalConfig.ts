@@ -46,6 +46,7 @@ export type AppSetup = {
 
 export type RoleSettings = {
   role: string;
+  name?: string;
 };
 
 export type DatabaseSettings = {
@@ -87,7 +88,6 @@ export type LifecycleDefaults = {
   deployCluster: string;
   helmDeployPipeline: string;
   ingressClassName?: string;
-  serviceAccountName?: string;
 };
 
 export type PublicChart = {

@@ -907,8 +907,8 @@ export default class BuildService extends BaseService {
         const helmDeploys = [];
         const buildId = build?.id;
 
-        const { serviceAccount, lifecycleDefaults } = await GlobalConfigService.getInstance().getAllConfigs(true);
-        const serviceAccountName = lifecycleDefaults?.serviceAccountName || 'default';
+        const { serviceAccount } = await GlobalConfigService.getInstance().getAllConfigs(true);
+        const serviceAccountName = serviceAccount?.name || 'default';
         // create namespace and annotate the service account
         await k8s.createOrUpdateNamespace({ name: build.namespace, buildUUID: build.uuid, staticEnv: build.isStatic });
         await k8s.createOrUpdateServiceAccount({
@@ -977,8 +977,8 @@ export default class BuildService extends BaseService {
           );
         }
 
-        const { lifecycleDefaults } = await GlobalConfigService.getInstance().getAllConfigs();
-        const serviceAccountName = lifecycleDefaults?.serviceAccountName || 'default';
+        const { serviceAccount } = await GlobalConfigService.getInstance().getAllConfigs();
+        const serviceAccountName = serviceAccount?.name || 'default';
 
         const deploys = (
           await Deploy.query()

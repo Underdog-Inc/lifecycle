@@ -148,8 +148,8 @@ export async function createOrUpdateServiceAccount({ namespace, role }: { namesp
   const client = kc.makeApiClient(k8s.CoreV1Api);
 
   // Get the service account name from global config
-  const { lifecycleDefaults } = await GlobalConfigService.getInstance().getAllConfigs(true);
-  const serviceAccountName = lifecycleDefaults?.serviceAccountName || 'default';
+  const { serviceAccount } = await GlobalConfigService.getInstance().getAllConfigs(true);
+  const serviceAccountName = serviceAccount?.name || 'default';
 
   const serviceAccountExists = async () => {
     try {
