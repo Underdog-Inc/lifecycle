@@ -168,18 +168,27 @@ export async function annotateServiceAccount({ namespace, role }: { namespace: s
       kind: 'ServiceAccount',
       metadata: {
         name: serviceAccountName,
-        namespace,
       },
     };
 
     try {
       // Check if service account already exists
       if (!(await serviceAccountExists())) {
+        logger.info(`[NS ${namespace}] Creating service account ${serviceAccountName}`);
         await client.createNamespacedServiceAccount(namespace, serviceAccountManifest);
         logger.debug(`[NS ${namespace}] Created service account ${serviceAccountName}`);
+      } else {
+        logger.debug(`[NS ${namespace}] Service account ${serviceAccountName} already exists`);
       }
     } catch (err) {
-      logger.error(`[NS ${namespace}] Error creating service account ${serviceAccountName}: ${err}`);
+      logger.error(`[NS ${namespace}] Error creating service account ${serviceAccountName}:`, {
+        error: err,
+        statusCode: err?.response?.statusCode,
+        statusMessage: err?.response?.statusMessage,
+        body: err?.response?.body,
+        serviceAccountName,
+        namespace
+      });
       throw err;
     }
   } else {
