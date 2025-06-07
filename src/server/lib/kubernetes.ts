@@ -1091,6 +1091,7 @@ export function generateDeployManifests(
                 securityContext: {
                   fsGroup: 2000,
                 },
+                serviceAccount: serviceAccountName,
                 serviceAccountName,
                 containers,
                 initContainers,
