@@ -414,10 +414,8 @@ export default async (req: NextApiRequest, res: NextApiResponse) => {
       }
     }
 
-    // Get total count before applying pagination
-    const totalQuery = query.clone().clearSelect().clearOrder().count('builds.id as count').first();
-    const totalResult = (await totalQuery) as any;
-    const total = parseInt(totalResult?.count as string, 10) || 0;
+    // Get total count using resultSize()
+    const total = await query.resultSize();
 
     // Apply sorting and pagination
     query = query.orderBy(`builds.${sortField}`, sortDirection).offset(offset).limit(limitNumber);
