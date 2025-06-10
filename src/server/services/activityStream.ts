@@ -404,12 +404,12 @@ export default class ActivityStream extends BaseService {
     const isStatic = build?.isStatic ?? false;
     const enabledFeatures = build?.enabledFeatures || [];
     const labels = pullRequest?.labels || [];
-    const hasDisabledLifecycleBuildComments = labels?.includes(Labels.DISABLE_BUILD_COMMENTS);
+    const disableLifecycleBuildComments = labels?.includes(Labels.DISABLE_BUILD_COMMENTS);
     const hasGithubStatusCommentEnabled = enabledFeatures.includes('hasGithubStatusComment');
     const isDeployed = build?.status === BuildStatus.DEPLOYED;
     const hasPurgeFastlyServiceCachLabel = labels?.includes(Labels.PURGE_FASTLY_SERVICE_CACHE);
     const isPurgingFastlyServiceCache = hasPurgeFastlyServiceCachLabel && isDeployed;
-    const isShowingStatusComment = isStatic || hasGithubStatusCommentEnabled || !hasDisabledLifecycleBuildComments;
+    const isShowingStatusComment = isStatic || hasGithubStatusCommentEnabled || !disableLifecycleBuildComments;
     if (!buildId) {
       logger.error(`${prefix}[buidIdError] No build ID found ${suffix}`);
       throw new Error('No build ID found for this build!');
@@ -438,13 +438,13 @@ export default class ActivityStream extends BaseService {
         if (isPurgingFastlyServiceCache) await this.purgeFastlyServiceCache(uuid);
       }
 
-      if (updateStatus && isShowingStatusComment) {
+      // if (updateStatus && isShowingStatusComment) {
         await this.updateStatusComment(build, deploys, pullRequest, repository).catch((error) => {
           logger.warn(
             `${prefix} (Full YAML: ${isFullYaml}) Unable to update ${queued} status comment ${suffix}: ${error}`
           );
         });
-      }
+      // }
     } catch (error) {
       if (error?.name !== 'LockError') {
         logger.child({ error }).error(`${prefix} Failed to update the activity feed ${suffix}`);
