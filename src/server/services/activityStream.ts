@@ -475,7 +475,7 @@ export default class ActivityStream extends BaseService {
    */
   private async editCommentForBuild(build: Build, deploys: Deploy[]) {
     let message = ``;
-    const disableLifecycleBuildComments = `Add \`${Labels.DISABLE_BUILD_COMMENTS}\``;
+    const disableLifecycleBuildComments = `${Labels.DISABLE_BUILD_COMMENTS}`;
     message += `## ✏️ Environment Overrides\n`;
     message += '<details>\n';
     message += '<summary>Usage</summary>\n\n';
