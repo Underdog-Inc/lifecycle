@@ -616,7 +616,6 @@ export default class ActivityStream extends BaseService {
   private async generateMissionControlComment(
     build: Build,
     deploys: Deploy[],
-    // repository: Repository,
     pullRequest: PullRequest,
     isBot?: boolean
   ) {
