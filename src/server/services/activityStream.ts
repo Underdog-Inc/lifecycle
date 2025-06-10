@@ -396,26 +396,25 @@ export default class ActivityStream extends BaseService {
   ) {
     const buildId = build?.id;
     const uuid = build?.uuid;
-    const isFullYaml = build?.enableFullYaml;
+    // const isFullYaml = build?.enableFullYaml;
     const fullName = pullRequest?.fullName;
     const branchName = pullRequest?.branchName;
     const prefix = `[BUILD ${uuid}][updatePullRequestActivityStream]`;
     const suffix = `for ${fullName}/${branchName}`;
-    const isStatic = build?.isStatic ?? false;
-    const enabledFeatures = build?.enabledFeatures || [];
+    // const isStatic = build?.isStatic ?? false;
+    // const enabledFeatures = build?.enabledFeatures || [];
     const labels = pullRequest?.labels || [];
-    const disableLifecycleBuildComments = labels?.includes(Labels.DISABLE_BUILD_COMMENTS);
-    const hasGithubStatusCommentEnabled = enabledFeatures.includes('hasGithubStatusComment');
+    // const disableLifecycleBuildComments = labels?.includes(Labels.DISABLE_BUILD_COMMENTS);
+    // const hasGithubStatusCommentEnabled = enabledFeatures.includes('hasGithubStatusComment');
     const isDeployed = build?.status === BuildStatus.DEPLOYED;
     const hasPurgeFastlyServiceCachLabel = labels?.includes(Labels.PURGE_FASTLY_SERVICE_CACHE);
     const isPurgingFastlyServiceCache = hasPurgeFastlyServiceCachLabel && isDeployed;
-    const isShowingStatusComment = isStatic || hasGithubStatusCommentEnabled || !disableLifecycleBuildComments;
+    // const isShowingStatusComment = isStatic || hasGithubStatusCommentEnabled || !disableLifecycleBuildComments;
     if (!buildId) {
       logger.error(`${prefix}[buidIdError] No build ID found ${suffix}`);
       throw new Error('No build ID found for this build!');
     }
     const resource = `build.${buildId}`;
-    const queued = queue ? 'queued' : '';
     let lock;
     try {
       lock = await this.redlock.lock(resource, 9000);
@@ -430,21 +429,27 @@ export default class ActivityStream extends BaseService {
 
       if (updateStatus || updateMissionControl) {
         await this.manageDeployments(build, deploys);
-        await this.updateMissionControlComment(build, deploys, pullRequest, repository).catch((error) => {
-          logger
-            .child({ error })
-            .warn(`${prefix} (Full YAML: ${isFullYaml}) Unable to update ${queued} mission control comment ${suffix}`);
+
+        // Generate combined comment
+        const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
+        const message = await this.generateCombinedComment(build, deploys, repository, pullRequest, isBot);
+
+        // Update the comment
+        const response = await github.createOrUpdatePullRequestComment({
+          installationId: repository.githubInstallationId,
+          pullRequestNumber: pullRequest.pullRequestNumber,
+          fullName: pullRequest.fullName,
+          message,
+          commentId: pullRequest.commentId,
+          etag: pullRequest.etag,
         });
+
+        const etag = response?.headers?.etag;
+        const commentId = response?.data?.id;
+        await pullRequest.$query().patch({ commentId, etag });
+
         if (isPurgingFastlyServiceCache) await this.purgeFastlyServiceCache(uuid);
       }
-
-      // if (updateStatus && isShowingStatusComment) {
-        await this.updateStatusComment(build, deploys, pullRequest, repository).catch((error) => {
-          logger.warn(
-            `${prefix} (Full YAML: ${isFullYaml}) Unable to update ${queued} status comment ${suffix}: ${error}`
-          );
-        });
-      // }
     } catch (error) {
       if (error?.name !== 'LockError') {
         logger.child({ error }).error(`${prefix} Failed to update the activity feed ${suffix}`);
@@ -1155,6 +1160,155 @@ export default class ActivityStream extends BaseService {
         .info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] success`);
     } catch (error) {
       logger.child({ error }).info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] error`);
+    }
+  }
+
+  private async generateCombinedComment(
+    build: Build,
+    deploys: Deploy[],
+    repository: Repository,
+    pullRequest: PullRequest,
+    isBot?: boolean
+  ) {
+    const uuid = build?.uuid;
+    const branchName = pullRequest?.branchName;
+    const fullName = pullRequest?.fullName;
+    const status = pullRequest?.status;
+    const isOpen = status === PullRequestStatus.OPEN;
+    const sha = build?.sha;
+    const labels = pullRequest?.labels || [];
+    const buildStatus = build?.status;
+    let message = '';
+    try {
+      const repositoryName = fullName?.length && fullName?.includes('/') ? fullName.split('/')[1] : '';
+      const isBuilding = [BuildStatus.BUILDING, BuildStatus.BUILT].includes(buildStatus as BuildStatus);
+      const isDeploying = buildStatus === BuildStatus.DEPLOYING;
+      const isAutoDeployingBuild = pullRequest.deployOnUpdate && buildStatus === BuildStatus.BUILT;
+      const isReadyToDeployBuild = !pullRequest.deployOnUpdate && buildStatus === BuildStatus.BUILT;
+      const isPending = [
+        BuildStatus.QUEUED,
+        BuildStatus.TORN_DOWN,
+        BuildStatus.PENDING,
+        BuildStatus.TEARING_DOWN,
+      ].includes(buildStatus as BuildStatus);
+      const isDeployed = buildStatus === BuildStatus.DEPLOYED;
+      let deployStatus;
+      const hasDeployLabel = labels?.includes(Labels.DEPLOY);
+      const tags = { uuid, repositoryName, branchName, env: 'prd', service: 'lifecycle-job', statsEvent: 'deployment' };
+      const eventDetails = {
+        title: 'Deployment Finished',
+        description: `deployment ${uuid} has finished for ${repositoryName} on branch ${branchName}`,
+      };
+      const isBotUser = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
+      const isKillSwitch = await enableKillSwitch({
+        fullName,
+        branch: branchName,
+        isBotUser,
+        status,
+      });
+      const statOptions = { sha, uuid, branchName, repositoryName, tags, eventDetails, disable: isKillSwitch };
+      const metrics = new Metrics('deployment', statOptions);
+      const hasErroringActiveDeploys = deploys.some(
+        (deploy) => deploy?.status === DeployStatus.ERROR && deploy?.active
+      );
+      const isDeployedWithActiveErrors = isDeployed && hasErroringActiveDeploys;
+      if (isDeployedWithActiveErrors) {
+        const deployStatuses = deploys.map(({ branchName, uuid, status }) => ({ branchName, uuid, status }));
+        logger
+          .child({ deployStatuses, buildStatus })
+          .info(`[BUILD ${uuid}][generateCombinedComment] deployed build has erroring deploys`);
+        metrics
+          .increment('deployWithErrors')
+          .event('Deploy Finished with Erroring Deploys', `${eventDetails.description} with erroring deploys`);
+      }
+      if (isPending || !isOpen) deployStatus = 'is pending ⏳';
+      else if (isBuilding) {
+        deployStatus = 'is building 🏗️';
+      } else if (isAutoDeployingBuild || isDeploying) {
+        deployStatus = 'is deploying 🚀';
+      } else if (isReadyToDeployBuild) deployStatus = 'is ready to deploy 🚀';
+      else if ((buildStatus === BuildStatus.ERROR && pullRequest.deployOnUpdate) || isDeployedWithActiveErrors) {
+        deployStatus = 'deployed with an Error ⚠️';
+        const tags = { error: 'error_during_deploy', result: 'error' };
+        metrics.increment('total', tags).event(eventDetails.title, eventDetails.description);
+      } else if (buildStatus === BuildStatus.CONFIG_ERROR) {
+        deployStatus = 'has a configuration error ⚠️';
+        const tags = { error: 'config_error', result: 'complete' };
+        metrics.increment('total', tags).event(eventDetails.title, eventDetails.description);
+      } else if (isDeployed) {
+        deployStatus = 'is deployed ✅';
+        const tags = { result: 'complete', error: '' };
+        metrics.increment('total', tags).event(eventDetails.title, eventDetails.description);
+      } else {
+        deployStatus = 'has an uncaptured Status ⚠️';
+        const tags = { error: 'uncaptured_status', result: 'error' };
+        metrics.increment('total', tags).event(eventDetails.title, eventDetails.description);
+      }
+      message = `### 💻✨ Your environment ${deployStatus}.\n`;
+      if (!hasDeployLabel && !isBot && isPending && isOpen) {
+        message += TO_DEPLOY_THIS_ENV;
+      }
+
+      message += await this.editCommentForBuild(build, deploys).catch((error) => {
+        logger.error(
+          `[BUILD ${build.uuid}][generateCombinedComment] (Full YAML Support: ${build.enableFullYaml}) Unable to generate mission control: ${error}`
+        );
+        return '';
+      });
+
+      if (isBuilding) {
+        message += '\n## 🏗️ Building\n';
+        message += 'We are busy building your code...\n';
+        message += '## Build Status\n';
+        message += await this.buildStatusBlock(build, deploys, null).catch((error) => {
+          logger
+            .child({ build, deploys, error })
+            .error(
+              `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate build status`
+            );
+          return '';
+        });
+      }
+
+      if (isDeployed || isDeploying || isAutoDeployingBuild) {
+        message += '\n---\n\n';
+        message += `## 📦 Deployments\n\n`;
+        message += await this.environmentBlock(build).catch((error) => {
+          logger.error(
+            `[BUILD ${build.uuid}][generateCombinedComment] (Full YAML Support: ${build.enableFullYaml}) Unable to generate environment comment block: ${error}`
+          );
+          return '';
+        });
+      }
+
+      if (isDeployed || isDeploying || isAutoDeployingBuild) {
+        message += await this.dashboardBlock(build, deploys).catch((error) => {
+          logger.error(
+            `[BUILD ${build.uuid}][generateCombinedComment] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${error}`
+          );
+          return '';
+        });
+      }
+
+      message += `\n\n${isStaging() ? 'stg ' : ''}status comment: enabled\n`;
+      return message;
+    } catch (error) {
+      logger
+        .child({
+          error,
+          uuid,
+          branchName,
+          fullName,
+          status,
+          isOpen,
+          sha,
+          labels,
+          buildStatus,
+        })
+        .error(
+          `[BUILD ${uuid}][generateCombinedComment] Failed to generate combined comment for ${fullName}/${branchName}`
+        );
+      return message;
     }
   }
 }
