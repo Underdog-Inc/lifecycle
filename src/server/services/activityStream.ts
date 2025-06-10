@@ -327,7 +327,7 @@ export default class ActivityStream extends BaseService {
       const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
       // get the environment for it's name
       await build.$fetchGraph('environment');
-      const message = await this.generateMissionControlComment(build, deploys, repository, pullRequest, isBot);
+      const message = await this.generateMissionControlComment(build, deploys, pullRequest, isBot);
       const response = await github.createOrUpdatePullRequestComment({
         installationId: repository.githubInstallationId,
         pullRequestNumber: pullRequest.pullRequestNumber,
@@ -616,7 +616,7 @@ export default class ActivityStream extends BaseService {
   private async generateMissionControlComment(
     build: Build,
     deploys: Deploy[],
-    repository: Repository,
+    // repository: Repository,
     pullRequest: PullRequest,
     isBot?: boolean
   ) {
