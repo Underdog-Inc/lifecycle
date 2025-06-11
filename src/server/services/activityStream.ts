@@ -327,7 +327,7 @@ export default class ActivityStream extends BaseService {
       const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
       // get the environment for it's name
       await build.$fetchGraph('environment');
-      const message = await this.generateMissionControlComment(build, deploys, repository, pullRequest, isBot);
+      const message = await this.generateMissionControlComment(build, deploys, pullRequest, isBot);
       const response = await github.createOrUpdatePullRequestComment({
         installationId: repository.githubInstallationId,
         pullRequestNumber: pullRequest.pullRequestNumber,
@@ -404,12 +404,12 @@ export default class ActivityStream extends BaseService {
     const isStatic = build?.isStatic ?? false;
     const enabledFeatures = build?.enabledFeatures || [];
     const labels = pullRequest?.labels || [];
-    const hasUseDeprecatedStatusComment = labels?.includes(Labels.ENABLE_LIFECYCLE_STATUS_COMMENTS);
+    const disableLifecycleBuildComments = labels?.includes(Labels.DISABLE_BUILD_COMMENTS);
     const hasGithubStatusCommentEnabled = enabledFeatures.includes('hasGithubStatusComment');
     const isDeployed = build?.status === BuildStatus.DEPLOYED;
     const hasPurgeFastlyServiceCachLabel = labels?.includes(Labels.PURGE_FASTLY_SERVICE_CACHE);
     const isPurgingFastlyServiceCache = hasPurgeFastlyServiceCachLabel && isDeployed;
-    const isShowingStatusComment = isStatic || hasUseDeprecatedStatusComment || hasGithubStatusCommentEnabled;
+    const isShowingStatusComment = isStatic || hasGithubStatusCommentEnabled || !disableLifecycleBuildComments;
     if (!buildId) {
       logger.error(`${prefix}[buidIdError] No build ID found ${suffix}`);
       throw new Error('No build ID found for this build!');
@@ -475,7 +475,7 @@ export default class ActivityStream extends BaseService {
    */
   private async editCommentForBuild(build: Build, deploys: Deploy[]) {
     let message = ``;
-    const enableLifecycleStatusComments = `Add \`${Labels.ENABLE_LIFECYCLE_STATUS_COMMENTS}\``;
+    const disableLifecycleBuildComments = `${Labels.DISABLE_BUILD_COMMENTS}`;
     message += `## ✏️ Environment Overrides\n`;
     message += '<details>\n';
     message += '<summary>Usage</summary>\n\n';
@@ -483,7 +483,7 @@ export default class ActivityStream extends BaseService {
     const enabledFeatures = build?.enabledFeatures || [];
     const hasEnabledFeatures = enabledFeatures?.length > 0;
     if (hasEnabledFeatures) message += `* LC testing features: ${enabledFeatures.join(', ')}\n`;
-    message += `* To enable status comments, add the ${enableLifecycleStatusComments} label.\n`;
+    message += `* Build status comments are enabled by default. To disable status comments, add the ${disableLifecycleBuildComments} label.\n`;
     message += `* You can enable/disable individual service by clicking the Checkboxes below, OR\nEditing this comment to Enable/Disable multiple services at the same time by changing between \`[]\` and \`[X]\`.\n`;
     message += `* You can also edit the branch name or URL of an external service, to further customize your deployment.\n\n`;
     message += '</details>\n\n';
@@ -616,7 +616,6 @@ export default class ActivityStream extends BaseService {
   private async generateMissionControlComment(
     build: Build,
     deploys: Deploy[],
-    repository: Repository,
     pullRequest: PullRequest,
     isBot?: boolean
   ) {
