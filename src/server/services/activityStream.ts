@@ -1003,157 +1003,234 @@ export default class ActivityStream extends BaseService {
   }
 
   private async environmentBlock(build: Build): Promise<string> {
-    let message = '';
-    message += '### Lifecycle Environments\n';
-    message += '| Service | Branch | Link |\n';
-    message += '|---|---|---|\n';
+    let message = this.createEnvironmentTableHeader();
 
     await build?.$fetchGraph('[deploys.[service, deployable]]');
 
     const orgChartName = await GlobalConfigService.getInstance().getOrgChartName();
-    let { deploys } = build;
-    if (deploys.length > 1) {
-      deploys = deploys.sort((a, b) => a.id - b.id);
-    }
-    for (const deploy of deploys) {
-      const { service, deployable } = deploy;
-      const isOrgHelmChart = orgChartName === deployable?.helm?.chart?.name;
+    const sortedDeploys = this.getSortedDeploys(build.deploys);
 
-      const servicePublic: boolean = build.enableFullYaml ? deployable.public || isOrgHelmChart : service.public;
-      const serviceName: string = build.enableFullYaml ? deployable.name : service.name;
-      const serviceType: DeployTypes = build.enableFullYaml ? deployable.type : service.type;
-      const serviceHostPortMapping: Record<string, any> = build.enableFullYaml
-        ? deployable.hostPortMapping
-        : service.hostPortMapping;
-      const serviceNameWithUrl = deploy.deployable.repositoryId
-        ? `[${serviceName}](${GIT_SERVICE_URL}/${deploy.deployable?.repository?.fullName}/tree/${deploy.branchName})`
-        : serviceName;
+    for (const deploy of sortedDeploys) {
+      const serviceInfo = this.extractServiceInfo(deploy, build.enableFullYaml, orgChartName);
 
-      if (
-        servicePublic &&
-        deploy.active &&
-        (serviceType === DeployTypes.DOCKER ||
-          serviceType === DeployTypes.GITHUB ||
-          serviceType === DeployTypes.CODEFRESH ||
-          isOrgHelmChart)
-      ) {
-        if (serviceHostPortMapping && Object.keys(serviceHostPortMapping).length > 0) {
-          Object.keys(serviceHostPortMapping).forEach((key) => {
-            message += `| ${key}-${serviceNameWithUrl} | ${deploy.branchName} | https://${key}-${deploy.publicUrl}|\n`;
-          });
-        } else {
-          message += `| ${serviceNameWithUrl} | ${deploy.branchName} | https://${deploy.publicUrl}|\n`;
-        }
+      if (this.shouldIncludeInEnvironmentTable(serviceInfo, deploy)) {
+        message += this.generateServiceRows(serviceInfo, deploy);
       }
     }
 
     return message + '\n';
   }
 
-  private async dashboardBlock(build: Build, deploys: Deploy[]) {
-    const datadogLogFastlyUrl = new URL('https://app.datadoghq.com/logs');
-    const datadogLogUrl = new URL('https://app.datadoghq.com/logs');
-    const datadogServerlessUrl = new URL('https://app.datadoghq.com/functions');
-    const datadogTraceUrl = new URL('https://app.datadoghq.com/apm/traces');
-    const datadogRumSessionsUrl = new URL('https://app.datadoghq.com/rum/explorer');
-    const datadogContainersUrl = new URL('https://app.datadoghq.com/containers');
+  private createEnvironmentTableHeader(): string {
+    return ['### Lifecycle Environments\n', '| Service | Branch | Link |\n', '|---|---|---|\n'].join('');
+  }
 
-    datadogLogFastlyUrl.searchParams.append('query', `source:fastly @request.host:*${build.uuid}*`);
-    datadogLogFastlyUrl.searchParams.append('paused', 'false');
-    datadogLogUrl.searchParams.append('query', `env:lifecycle-${build.uuid}`);
-    datadogLogUrl.searchParams.append('paused', 'false');
-    datadogServerlessUrl.searchParams.append('text_search', `env:*${build.uuid}*`);
-    datadogServerlessUrl.searchParams.append('paused', 'false');
-    datadogTraceUrl.searchParams.append('query', `env:*${build.uuid}*`);
-    datadogTraceUrl.searchParams.append('paused', 'false');
-    datadogRumSessionsUrl.searchParams.append('query', `env:*${build.uuid}*`);
-    datadogRumSessionsUrl.searchParams.append('live', 'true');
-    datadogContainersUrl.searchParams.append('query', `env:lifecycle-${build.uuid}`);
-    datadogContainersUrl.searchParams.append('paused', 'false');
+  private getSortedDeploys(deploys: Deploy[]): Deploy[] {
+    return deploys.length > 1 ? deploys.sort((a, b) => a.id - b.id) : deploys;
+  }
+
+  private extractServiceInfo(deploy: Deploy, enableFullYaml: boolean, orgChartName: string) {
+    const { service, deployable } = deploy;
+    const isOrgHelmChart = orgChartName === deployable?.helm?.chart?.name;
+
+    return {
+      isPublic: enableFullYaml ? deployable.public || isOrgHelmChart : service.public,
+      name: enableFullYaml ? deployable.name : service.name,
+      type: enableFullYaml ? deployable.type : service.type,
+      hostPortMapping: enableFullYaml ? deployable.hostPortMapping : service.hostPortMapping,
+      isOrgHelmChart,
+    };
+  }
+
+  private shouldIncludeInEnvironmentTable(serviceInfo: any, deploy: Deploy): boolean {
+    const validServiceTypes = [DeployTypes.DOCKER, DeployTypes.GITHUB, DeployTypes.CODEFRESH];
+
+    return (
+      serviceInfo.isPublic &&
+      deploy.active &&
+      (validServiceTypes.includes(serviceInfo.type) || serviceInfo.isOrgHelmChart)
+    );
+  }
+
+  private generateServiceRows(serviceInfo: any, deploy: Deploy): string {
+    const serviceNameWithUrl = this.createServiceNameWithUrl(serviceInfo.name, deploy);
+
+    if (this.hasHostPortMapping(serviceInfo.hostPortMapping)) {
+      return this.generateMultipleServiceRows(serviceInfo, serviceNameWithUrl, deploy);
+    }
+
+    return this.generateSingleServiceRow(serviceNameWithUrl, deploy);
+  }
+
+  private createServiceNameWithUrl(serviceName: string, deploy: Deploy): string {
+    return deploy.deployable.repositoryId
+      ? `[${serviceName}](${GIT_SERVICE_URL}/${deploy.deployable?.repository?.fullName}/tree/${deploy.branchName})`
+      : serviceName;
+  }
+
+  private hasHostPortMapping(hostPortMapping: Record<string, any>): boolean {
+    return hostPortMapping && Object.keys(hostPortMapping).length > 0;
+  }
+
+  private generateMultipleServiceRows(serviceInfo: any, serviceNameWithUrl: string, deploy: Deploy): string {
+    return Object.keys(serviceInfo.hostPortMapping)
+      .map((key) => `| ${key}-${serviceNameWithUrl} | ${deploy.branchName} | https://${key}-${deploy.publicUrl}|\n`)
+      .join('');
+  }
+
+  private generateSingleServiceRow(serviceNameWithUrl: string, deploy: Deploy): string {
+    return `| ${serviceNameWithUrl} | ${deploy.branchName} | https://${deploy.publicUrl}|\n`;
+  }
+
+  private async dashboardBlock(build: Build, deploys: Deploy[]) {
+    const buildUuid = build.uuid;
+
+    const dashboardUrls = this.createDashboardUrls(buildUuid);
+    const fastlyDashboardUrl = await this.getFastlyDashboardUrl(build, deploys);
+
+    return this.generateDashboardMessage(dashboardUrls, fastlyDashboardUrl);
+  }
+
+  private createDashboardUrls(buildUuid: string) {
+    const baseUrl = 'https://app.datadoghq.com';
+
+    return {
+      fastlyLogs: this.createDatadogUrl(`${baseUrl}/logs`, {
+        query: `source:fastly @request.host:*${buildUuid}*`,
+        paused: 'false',
+      }),
+      containers: this.createDatadogUrl(`${baseUrl}/containers`, {
+        query: `env:lifecycle-${buildUuid}`,
+        paused: 'false',
+      }),
+      lifecycleLogs: this.createDatadogUrl(`${baseUrl}/logs`, {
+        query: `env:lifecycle-${buildUuid}`,
+        paused: 'false',
+      }),
+      tracing: this.createDatadogUrl(`${baseUrl}/apm/traces`, {
+        query: `env:*${buildUuid}*`,
+        paused: 'false',
+      }),
+      serverless: this.createDatadogUrl(`${baseUrl}/functions`, {
+        text_search: `env:*${buildUuid}*`,
+        paused: 'false',
+      }),
+      rum: this.createDatadogUrl(`${baseUrl}/rum/explorer`, {
+        query: `env:*${buildUuid}*`,
+        live: 'true',
+      }),
+    };
+  }
+
+  private createDatadogUrl(baseUrl: string, params: Record<string, string>): string {
+    const url = new URL(baseUrl);
+    Object.entries(params).forEach(([key, value]) => {
+      url.searchParams.append(key, value);
+    });
+    return url.href;
+  }
+
+  private async getFastlyDashboardUrl(build: Build, deploys: Deploy[]): Promise<string | null> {
+    if (!(await this.containsFastlyDeployment(deploys))) {
+      return null;
+    }
+
+    const fastlyServiceDashboardUrl = await this.fastly.getServiceDashboardUrl(build.uuid, 'fastly');
+    return fastlyServiceDashboardUrl?.href || null;
+  }
+
+  private generateDashboardMessage(dashboardUrls: Record<string, string>, fastlyDashboardUrl: string | null): string {
+    const dashboardLinks = [
+      ['Fastly Logs', dashboardUrls.fastlyLogs],
+      ['Containers', dashboardUrls.containers],
+      ['Lifecycle Env Logs', dashboardUrls.lifecycleLogs],
+      ['Tracing', dashboardUrls.tracing],
+      ['Serverless', dashboardUrls.serverless],
+      ['RUM (If Enabled)', dashboardUrls.rum],
+      ...(fastlyDashboardUrl ? [['Fastly Dashboard', fastlyDashboardUrl]] : []),
+    ];
 
     let message = '<details>\n';
     message += '<summary>Dashboards</summary>\n\n';
     message += '|| Links |\n';
     message += '| ------------- | ------------- |\n';
-    message += `| Fastly Logs | ${datadogLogFastlyUrl.href} |\n`;
-    message += `| Containers | ${datadogContainersUrl.href} |\n`;
-    message += `| Lifecycle Env Logs | ${datadogLogUrl.href} |\n`;
-    message += `| Tracing | ${datadogTraceUrl.href} |\n`;
-    message += `| Serverless | ${datadogServerlessUrl.href} |\n`;
-    message += `| RUM (If Enabled) | ${datadogRumSessionsUrl.href} |\n`;
-    if (await this.containsFastlyDeployment(deploys)) {
-      const fastlyServiceDashboardUrl: URL = await this.fastly.getServiceDashboardUrl(build.uuid, 'fastly');
-      if (fastlyServiceDashboardUrl) {
-        message += `| Fastly Dashboard | ${fastlyServiceDashboardUrl.href} |\n`;
-      }
-    }
-    message += '</details>\n';
 
+    dashboardLinks.forEach(([label, url]) => {
+      message += `| ${label} | ${url} |\n`;
+    });
+
+    message += '</details>\n';
     return message;
   }
 
-  private async manageDeployments(build, deploys) {
+  private async manageDeployments(build: Build, deploys: Deploy[]) {
     const uuid = build?.uuid;
-    const isGithubDeployments = build?.githubDeployments;
-    if (!isGithubDeployments) return;
-    const isFullYaml = build?.enableFullYaml;
+
+    if (!build?.githubDeployments) {
+      return;
+    }
+
+    const isFullYaml = build.enableFullYaml;
     const orgChartName = await GlobalConfigService.getInstance().getOrgChartName();
 
     try {
-      await Promise.all(
-        deploys.map(async (deploy) => {
-          const deployId = deploy?.id;
-          const service = deploy?.service;
-          const deployable = deploy?.deployable;
-          const isActive = deploy?.active;
-          const isOrgHelmChart = orgChartName === deployable?.helm?.chart?.name;
-          const isPublic = isFullYaml ? deployable.public || isOrgHelmChart : service.public;
-          const serviceType = isFullYaml ? deployable?.type : service?.type;
-          const isActiveAndPublic = isActive && isPublic;
-          const isDeploymentType = [DeployTypes.DOCKER, DeployTypes.GITHUB, DeployTypes.CODEFRESH].includes(
-            serviceType
-          );
-          const isDeployment = isActiveAndPublic && isDeploymentType;
-          if (!isDeployment) {
-            logger.debug(`Skipping deployment ${deploy?.name}`);
-            return;
-          }
-          await this.db.services.GithubService.githubDeploymentQueue
-            .add({ deployId, action: 'create' }, { delay: 10000, jobId: deployId })
-            .catch((error) =>
-              logger.child({ error }).warn(`[BUILD ${uuid}][manageDeployments] error with ${deployId}`)
-            );
-        })
-      );
+      const deploymentPromises = deploys
+        .filter((deploy) => this.shouldCreateDeployment(deploy, isFullYaml, orgChartName))
+        .map((deploy) => this.createGithubDeployment(deploy, uuid));
+
+      await Promise.all(deploymentPromises);
     } catch (error) {
       logger.child({ error }).debug(`[BUILD ${uuid}][manageDeployments] error`);
     }
   }
 
-  private async purgeFastlyServiceCache(uuid: string) {
+  private shouldCreateDeployment(deploy: Deploy, isFullYaml: boolean, orgChartName: string): boolean {
+    const { service, deployable, active } = deploy;
+
+    if (!active) {
+      return false;
+    }
+
+    const isOrgHelmChart = orgChartName === deployable?.helm?.chart?.name;
+    const isPublic = isFullYaml ? deployable.public || isOrgHelmChart : service.public;
+    const serviceType = isFullYaml ? deployable?.type : service?.type;
+
+    const validServiceTypes = [DeployTypes.DOCKER, DeployTypes.GITHUB, DeployTypes.CODEFRESH];
+
+    return isPublic && validServiceTypes.includes(serviceType);
+  }
+
+  private async createGithubDeployment(deploy: Deploy, buildUuid: string): Promise<void> {
+    const deployId = deploy.id;
+
     try {
-      const computeShieldServiceId = await this.fastly.getFastlyServiceId(uuid, 'compute-shield');
-      logger.child({ computeShieldServiceId }).debug(`[BUILD ${uuid}][activityStream][fastly] computeShieldServiceId`);
-      if (computeShieldServiceId) {
-        await this.fastly.purgeAllServiceCache(computeShieldServiceId, uuid, 'fastly');
-      }
-
-      const optimizelyServiceId = await this.fastly.getFastlyServiceId(uuid, 'optimizely');
-      logger.child({ optimizelyServiceId }).debug(`[BUILD ${uuid}][activityStream][fastly] optimizelyServiceId`);
-      if (optimizelyServiceId) {
-        await this.fastly.purgeAllServiceCache(optimizelyServiceId, uuid, 'optimizely');
-      }
-
-      const fastlyServiceId = await this.fastly.getFastlyServiceId(uuid, 'fastly');
-      logger.child({ fastlyServiceId }).debug(`[BUILD ${uuid}][activityStream][fastly] fastlyServiceId`);
-      if (fastlyServiceId) {
-        await this.fastly.purgeAllServiceCache(fastlyServiceId, uuid, 'fastly');
-      }
-      logger
-        .child({ fastlyServiceId })
-        .info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] success`);
+      await this.db.services.GithubService.githubDeploymentQueue.add(
+        { deployId, action: 'create' },
+        { delay: 10000, jobId: deployId }
+      );
     } catch (error) {
-      logger.child({ error }).info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] error`);
+      logger.child({ error }).warn(`[BUILD ${buildUuid}][manageDeployments] error with ${deployId}`);
+    }
+  }
+
+  private async purgeFastlyServiceCache(uuid: string) {
+    const serviceTypes = ['compute-shield', 'optimizely', 'fastly'] as const;
+
+    try {
+      for (const serviceType of serviceTypes) {
+        const serviceId = await this.fastly.getFastlyServiceId(uuid, serviceType);
+        logger
+          .child({ serviceId, serviceType })
+          .debug(`[BUILD ${uuid}][activityStream][fastly] ${serviceType}ServiceId`);
+
+        if (serviceId) {
+          await this.fastly.purgeAllServiceCache(serviceId, uuid, serviceType);
+        }
+      }
+
+      logger.info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] success`);
+    } catch (error) {
+      logger.child({ error }).error(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] error`);
     }
   }
 }

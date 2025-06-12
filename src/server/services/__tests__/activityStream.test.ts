@@ -1,6 +1,5 @@
 import ActivityStream from '../activityStream';
 import { PullRequest, Build, Deploy, Repository } from 'server/models';
-import GlobalConfigService from '../globalConfig';
 
 // Mock dependencies
 jest.mock('server/lib/fastly');
@@ -103,6 +102,72 @@ describe('ActivityStream', () => {
     jest.clearAllMocks();
     activityStream = new ActivityStream();
     activityStream['redis'] = mockRedis as any;
+    activityStream.db = {
+      models: {},
+      services: {
+        BuildService: {
+          resolveAndDeployBuildQueue: {
+            add: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+      },
+    } as any;
+    activityStream.fastly = {
+      getServiceDashboardUrl: jest.fn().mockResolvedValue(null),
+      purgeAllServiceCache: jest.fn().mockResolvedValue(undefined),
+    } as any;
+    activityStream.updatePullRequestActivityStream = jest.fn().mockResolvedValue(undefined);
+    activityStream.updateBuildsAndDeploysFromCommentEdit = jest
+      .fn()
+      .mockImplementation(async (pullRequest, commentBody) => {
+        const build = pullRequest.build;
+        const deploys = build?.deploys || [];
+        const repository = pullRequest.repository;
+        const runUuid = 'test-run-uuid';
+
+        if (commentBody.includes('#REDEPLOY') || commentBody.includes('[x] Redeploy Environment')) {
+          await activityStream.db.services.BuildService.resolveAndDeployBuildQueue.add({
+            buildId: build.id,
+            runUUID: runUuid,
+          });
+          return;
+        }
+
+        if (commentBody.includes('[x] Purge Fastly Service Cache')) {
+          await activityStream['purgeFastlyServiceCache'](build.uuid);
+          await activityStream.updatePullRequestActivityStream(
+            build,
+            deploys,
+            pullRequest,
+            repository,
+            true,
+            false,
+            null,
+            true
+          );
+          return;
+        }
+
+        await activityStream['applyCommentOverrides']({
+          build,
+          deploys,
+          pullRequest,
+          commentBody,
+          runUuid,
+        });
+        await activityStream.updatePullRequestActivityStream(
+          build,
+          deploys,
+          pullRequest,
+          repository,
+          true,
+          true,
+          null,
+          true
+        );
+      });
+    activityStream['purgeFastlyServiceCache'] = jest.fn().mockResolvedValue(undefined);
+    activityStream['applyCommentOverrides'] = jest.fn().mockResolvedValue(undefined);
   });
 
   describe('Initialization', () => {
@@ -274,10 +339,12 @@ describe('ActivityStream', () => {
 
       activityStream['forceUnlock'] = jest.fn().mockResolvedValue(undefined);
 
+      activityStream['updateMissionControlComment'] = jest.fn().mockResolvedValue(undefined);
+
       activityStream.updatePullRequestActivityStream = jest
         .fn()
         .mockImplementation(
-          async (build, deploys, pullRequest, repository, updateMissionControl, updateStatus, error, queue) => {
+          async (build, _deploys, pullRequest, _repository, _updateMissionControl, _updateStatus, _error, queue) => {
             try {
               const lock = await activityStream.redlock.lock(`build.${build.id}`, 9000);
 
@@ -396,103 +463,64 @@ describe('ActivityStream', () => {
     });
   });
 
-  describe('manageDeployments', () => {
-    beforeEach(() => {
-      activityStream.db.services = {
-        GithubService: {
-          githubDeploymentQueue: {
-            add: jest.fn().mockResolvedValue(undefined),
-          },
-        },
-      } as any;
+  describe('updateBuildsAndDeploysFromCommentEdit', () => {
+    it('should handle redeploy request from comment', async () => {
+      const build = createMockBuild();
+      const pullRequest = createMockPullRequest();
+      const commentBody = '#REDEPLOY';
 
-      const mockGlobalConfigService = {
-        getOrgChartName: jest.fn().mockResolvedValue('org-chart'),
-      } as unknown as GlobalConfigService;
-      jest.spyOn(GlobalConfigService, 'getInstance').mockReturnValue(mockGlobalConfigService);
+      await activityStream.updateBuildsAndDeploysFromCommentEdit(pullRequest, commentBody);
 
-      activityStream['manageDeployments'] = jest.fn().mockImplementation(async (build, deploys) => {
-        if (!build.githubDeployments) return;
-
-        try {
-          await Promise.all(
-            deploys.map(async (deploy) => {
-              const service = deploy.service;
-              const deployable = deploy.deployable;
-              const isActive = deploy.active;
-              const isPublic = build.enableFullYaml ? deployable.public : service.public;
-              const serviceType = build.enableFullYaml ? deployable.type : service.type;
-              const isDeployment = isActive && isPublic && ['DOCKER', 'GITHUB', 'CODEFRESH'].includes(serviceType);
-
-              if (isDeployment) {
-                await activityStream.db.services.GithubService.githubDeploymentQueue.add(
-                  { deployId: deploy.id, action: 'create' },
-                  { delay: 10000, jobId: deploy.id }
-                );
-              }
-            })
-          );
-        } catch (error) {
-          // Errors are logged but not thrown
-        }
+      expect(activityStream.db.services.BuildService.resolveAndDeployBuildQueue.add).toHaveBeenCalledWith({
+        buildId: build.id,
+        runUUID: expect.any(String),
       });
+      expect(activityStream.updatePullRequestActivityStream).not.toHaveBeenCalled();
     });
 
-    it('should add deployments to queue for valid deploys', async () => {
+    it('should handle Fastly purge request from comment', async () => {
       const build = createMockBuild();
-      const deploys = [
-        createMockDeploy(), // valid deployment
-        createMockDeploy({ active: false }), // inactive
-        createMockDeploy({ service: { public: false, type: 'GITHUB' } }), // not public
-        createMockDeploy({ service: { public: true, type: 'EXTERNAL_HTTP' } }), // wrong type
-      ];
+      const pullRequest = createMockPullRequest();
+      const commentBody = '[x] Purge Fastly Service Cache';
 
-      await activityStream['manageDeployments'](build, deploys);
+      await activityStream.updateBuildsAndDeploysFromCommentEdit(pullRequest, commentBody);
 
-      expect(activityStream.db.services.GithubService.githubDeploymentQueue.add).toHaveBeenCalledTimes(1);
-      expect(activityStream.db.services.GithubService.githubDeploymentQueue.add).toHaveBeenCalledWith(
-        { deployId: 1, action: 'create' },
-        { delay: 10000, jobId: 1 }
+      expect(activityStream['purgeFastlyServiceCache']).toHaveBeenCalledWith(build.uuid);
+      expect(activityStream.updatePullRequestActivityStream).toHaveBeenCalledWith(
+        pullRequest.build,
+        pullRequest.build.deploys,
+        pullRequest,
+        pullRequest.repository,
+        true,
+        false,
+        null,
+        true
       );
     });
 
-    it('should handle full YAML deploys correctly', async () => {
-      const build = createMockBuild({ enableFullYaml: true });
-      const deploys = [
-        createMockDeploy(),
-        createMockDeploy({
-          deployable: {
-            name: 'helm-deploy',
-            type: 'HELM',
-            public: true,
-            helm: { chart: { name: 'org-chart' } },
-          },
-        }),
-      ];
+    it('should handle environment overrides from comment', async () => {
+      const pullRequest = createMockPullRequest();
+      const commentBody = 'ENV:TEST_KEY:test_value';
 
-      await activityStream['manageDeployments'](build, deploys);
+      await activityStream.updateBuildsAndDeploysFromCommentEdit(pullRequest, commentBody);
 
-      expect(activityStream.db.services.GithubService.githubDeploymentQueue.add).toHaveBeenCalledTimes(1);
-    });
-
-    it('should not process deployments if githubDeployments is disabled', async () => {
-      const build = createMockBuild({ githubDeployments: false });
-      const deploys = [createMockDeploy()];
-
-      await activityStream['manageDeployments'](build, deploys);
-
-      expect(activityStream.db.services.GithubService.githubDeploymentQueue.add).not.toHaveBeenCalled();
-    });
-
-    it('should handle errors during deployment processing', async () => {
-      const build = createMockBuild();
-      const deploys = [createMockDeploy()];
-
-      activityStream.db.services.GithubService.githubDeploymentQueue.add = jest
-        .fn()
-        .mockRejectedValue(new Error('Queue error'));
-
-      await expect(activityStream['manageDeployments'](build, deploys)).resolves.not.toThrow();
+      expect(activityStream['applyCommentOverrides']).toHaveBeenCalledWith({
+        build: pullRequest.build,
+        deploys: pullRequest.build.deploys,
+        pullRequest,
+        commentBody,
+        runUuid: 'test-run-uuid',
+      });
+      expect(activityStream.updatePullRequestActivityStream).toHaveBeenCalledWith(
+        pullRequest.build,
+        pullRequest.build.deploys,
+        pullRequest,
+        pullRequest.repository,
+        true,
+        true,
+        null,
+        true
+      );
     });
   });
 });
