@@ -2,7 +2,6 @@ import ActivityStream from '../activityStream';
 import { PullRequest, Build, Deploy, Repository } from 'server/models';
 
 // Mock dependencies
-jest.mock('server/lib/fastly');
 jest.mock('server/lib/logger');
 jest.mock('server/lib/dependencies', () => ({
   redisClient: {
@@ -112,10 +111,6 @@ describe('ActivityStream', () => {
         },
       },
     } as any;
-    activityStream.fastly = {
-      getServiceDashboardUrl: jest.fn().mockResolvedValue(null),
-      purgeAllServiceCache: jest.fn().mockResolvedValue(undefined),
-    } as any;
     activityStream.updatePullRequestActivityStream = jest.fn().mockResolvedValue(undefined);
     activityStream.updateBuildsAndDeploysFromCommentEdit = jest
       .fn()
@@ -130,21 +125,6 @@ describe('ActivityStream', () => {
             buildId: build.id,
             runUUID: runUuid,
           });
-          return;
-        }
-
-        if (commentBody.includes('[x] Purge Fastly Service Cache')) {
-          await activityStream['purgeFastlyServiceCache'](build.uuid);
-          await activityStream.updatePullRequestActivityStream(
-            build,
-            deploys,
-            pullRequest,
-            repository,
-            true,
-            false,
-            null,
-            true
-          );
           return;
         }
 
@@ -166,7 +146,6 @@ describe('ActivityStream', () => {
           true
         );
       });
-    activityStream['purgeFastlyServiceCache'] = jest.fn().mockResolvedValue(undefined);
     activityStream['applyCommentOverrides'] = jest.fn().mockResolvedValue(undefined);
   });
 
@@ -327,12 +306,6 @@ describe('ActivityStream', () => {
 
   describe('updatePullRequestActivityStream', () => {
     beforeEach(() => {
-      activityStream.fastly = {
-        getServiceDashboardUrl: jest.fn().mockResolvedValue(null),
-        purgeAllServiceCache: jest.fn().mockResolvedValue(undefined),
-        getFastlyServiceId: jest.fn().mockResolvedValue('mock-service-id'),
-      } as any;
-
       activityStream.commentQueue = {
         add: jest.fn().mockResolvedValue(undefined),
       } as any;
@@ -349,14 +322,7 @@ describe('ActivityStream', () => {
               const lock = await activityStream.redlock.lock(`build.${build.id}`, 9000);
 
               try {
-                if (
-                  pullRequest.labels &&
-                  pullRequest.labels.includes('purge-fastly-service-cache') &&
-                  build.status === 'DEPLOYED'
-                ) {
-                  const serviceId = await activityStream.fastly.getFastlyServiceId('test-uuid', 'compute-shield-id');
-                  await activityStream.fastly.purgeAllServiceCache(serviceId, build.uuid, 'fastly');
-                }
+                // Activity stream processing logic here
 
                 if (queue) {
                   await activityStream.commentQueue.add(pullRequest.id, {
@@ -410,31 +376,6 @@ describe('ActivityStream', () => {
       expect(mockLock.unlock).toHaveBeenCalled();
     });
 
-    it('should handle Fastly cache purge when label is present', async () => {
-      const build = createMockBuild({ status: 'DEPLOYED' });
-      const deploys = [createMockDeploy()];
-      const pullRequest = createMockPullRequest({
-        labels: ['purge-fastly-service-cache'],
-      });
-      const repository = createMockRepository();
-
-      const mockLock = { unlock: jest.fn() };
-      activityStream.redlock.lock = jest.fn().mockResolvedValue(mockLock);
-
-      await activityStream.updatePullRequestActivityStream(
-        build,
-        deploys,
-        pullRequest,
-        repository,
-        true,
-        true,
-        null,
-        true
-      );
-
-      expect(activityStream.fastly.purgeAllServiceCache).toHaveBeenCalledWith('mock-service-id', build.uuid, 'fastly');
-    });
-
     it('should handle lock errors and force unlock', async () => {
       const build = createMockBuild();
       const deploys = [createMockDeploy()];
@@ -476,26 +417,6 @@ describe('ActivityStream', () => {
         runUUID: expect.any(String),
       });
       expect(activityStream.updatePullRequestActivityStream).not.toHaveBeenCalled();
-    });
-
-    it('should handle Fastly purge request from comment', async () => {
-      const build = createMockBuild();
-      const pullRequest = createMockPullRequest();
-      const commentBody = '[x] Purge Fastly Service Cache';
-
-      await activityStream.updateBuildsAndDeploysFromCommentEdit(pullRequest, commentBody);
-
-      expect(activityStream['purgeFastlyServiceCache']).toHaveBeenCalledWith(build.uuid);
-      expect(activityStream.updatePullRequestActivityStream).toHaveBeenCalledWith(
-        pullRequest.build,
-        pullRequest.build.deploys,
-        pullRequest,
-        pullRequest.repository,
-        true,
-        false,
-        null,
-        true
-      );
     });
 
     it('should handle environment overrides from comment', async () => {
