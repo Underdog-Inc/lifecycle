@@ -577,7 +577,7 @@ export default class ActivityStream extends BaseService {
     message += `url: ${build.uuid}\n`;
 
     message +=
-      '\n\n// **Override Environment Variables:** *ENV:[KEY]:[VALUE]* --- Example *ENV:GORILLA_FUND:`https://gorillafund.org/`* 🦍 🤝 💪\n';
+      '\n\n// **Override Environment Variables:** *ENV:[KEY]:[VALUE]* --- Example *ENV:NATIONAL_CHAMPION:THE_OHIO_STATE_UNIVERSITY🏈\n';
     message += this.generateEnvBlockForBuild(build);
 
     message += `\n\n${CommentParser.FOOTER}\n\n`;
