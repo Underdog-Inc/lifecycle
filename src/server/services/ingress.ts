@@ -105,7 +105,7 @@ export default class IngressService extends BaseService {
         this.generateNginxManifestForConfiguration({
           configuration,
           defaultUUID: lifecycleDefaults?.defaultUUID,
-          ingressClassName: lifecycleDefaults?.ingressClassName
+          ingressClassName: lifecycleDefaults?.ingressClassName,
         }),
         {
           skipInvalid: true,
@@ -134,6 +134,17 @@ export default class IngressService extends BaseService {
     ingressClassName?: string;
   }) => {
     const annotations = {
+      // Default annotations for all ingresses
+      'nginx.ingress.kubernetes.io/configuration-snippet': `proxy_set_header Authorization $http_authorization;
+proxy_set_header X-Forwarded-For "$http_x_forwarded_for, $http_cf_connecting_ip";
+proxy_set_header X-Request-Start "t=$msec";
+add_header "Access-Control-Expose-Headers" "Authorization, Location-Expires";`,
+      'nginx.ingress.kubernetes.io/cors-allow-headers':
+        'Authorization,Cache-Control,Client-Request-Id,Client-Device-Id,Client-Type,Client-Version,Content-Type,DNT,If-Modified-Since,Keep-Alive,Location-Expires,Referring-Link,UD-Auth0-Forwarded-For,UD-Idempotency-Key,UD-User-ID,User-Agent,User-Latitude,User-Location-Token,User-Geo-Comply-License-Key,User-Longitude,X-Requested-With,X-Request-Start',
+      'nginx.ingress.kubernetes.io/cors-allow-methods': 'GET, PUT, POST, OPTIONS, DELETE, PATCH',
+      'nginx.ingress.kubernetes.io/cors-allow-origin': '*',
+      'nginx.ingress.kubernetes.io/enable-cors': 'true',
+      // Allow configuration-specific annotations to override defaults
       ...configuration.ingressAnnotations,
     };
     if (configuration.ipWhitelist && configuration.ipWhitelist.length > 0) {
