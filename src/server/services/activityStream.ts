@@ -33,7 +33,6 @@ import {
   PullRequestStatus,
 } from 'shared/constants';
 import { flattenObject, enableKillSwitch, isStaging } from 'server/lib/utils';
-import Fastly from 'server/lib/fastly';
 import { nanoid } from 'nanoid';
 import { redisClient } from 'server/lib/dependencies';
 import GlobalConfigService from './globalConfig';
@@ -47,7 +46,6 @@ const COMMENT_EDIT_DESCRIPTION = `You can use the section below to redeploy and 
 const GIT_SERVICE_URL = 'https://github.com';
 
 export default class ActivityStream extends BaseService {
-  fastly = new Fastly(this.redis);
   commentQueue = this.queueManager.registerQueue(`comment_queue-${JOB_VERSION}`, {
     createClient: redisClient.getBullCreateClient(),
     limiter: {
@@ -77,17 +75,6 @@ export default class ActivityStream extends BaseService {
   };
 
   /**
-   * Figure out if the build contains any fastly related service deployment
-   * @param build
-   * @returns
-   */
-  private async containsFastlyDeployment(deploys: Deploy[]): Promise<boolean> {
-    const fastlyServices: Deploy[] = deploys.filter((deploy) => deploy.active && deploy.uuid.includes('fastly'));
-
-    return fastlyServices.length > 0;
-  }
-
-  /**
    * Handle the comment edit event
    * @param pullRequest
    * @param body
@@ -103,23 +90,14 @@ export default class ActivityStream extends BaseService {
 
     const REDEPLOY_FLAG = '#REDEPLOY';
     const REDEPLOY_CHECKBOX = '[x] Redeploy Environment';
-    const PURGE_FASTLY_CHECKBOX = '[x] Purge Fastly Service Cache';
 
     const isRedeployRequested = [REDEPLOY_FLAG, REDEPLOY_CHECKBOX].some((flag) => commentBody.includes(flag));
-    const isFastlyPurgeRequested = commentBody.includes(PURGE_FASTLY_CHECKBOX);
 
     try {
       if (isRedeployRequested) {
         // if redeploy from comment, add to build queue and return
         logger.info(`[BUILD ${buildUuid}] Redeploy triggered from comment edit`);
         await this.db.services.BuildService.resolveAndDeployBuildQueue.add({ buildId, runUUID: runUuid });
-        return;
-      }
-
-      if (isFastlyPurgeRequested) {
-        // if fastly purge is requested from comment, we do not have to update the status
-        await this.purgeFastlyServiceCache(buildUuid);
-        shouldUpdateStatus = false;
         return;
       }
 
@@ -406,9 +384,6 @@ export default class ActivityStream extends BaseService {
     const labels = pullRequest?.labels || [];
     const disableLifecycleBuildComments = labels?.includes(Labels.DISABLE_BUILD_COMMENTS);
     const hasGithubStatusCommentEnabled = enabledFeatures.includes('hasGithubStatusComment');
-    const isDeployed = build?.status === BuildStatus.DEPLOYED;
-    const hasPurgeFastlyServiceCachLabel = labels?.includes(Labels.PURGE_FASTLY_SERVICE_CACHE);
-    const isPurgingFastlyServiceCache = hasPurgeFastlyServiceCachLabel && isDeployed;
     const isShowingStatusComment = isStatic || hasGithubStatusCommentEnabled || !disableLifecycleBuildComments;
     if (!buildId) {
       logger.error(`${prefix}[buidIdError] No build ID found ${suffix}`);
@@ -435,7 +410,6 @@ export default class ActivityStream extends BaseService {
             .child({ error })
             .warn(`${prefix} (Full YAML: ${isFullYaml}) Unable to update ${queued} mission control comment ${suffix}`);
         });
-        if (isPurgingFastlyServiceCache) await this.purgeFastlyServiceCache(uuid);
       }
 
       if (updateStatus && isShowingStatusComment) {
@@ -585,11 +559,6 @@ export default class ActivityStream extends BaseService {
     if (build.status !== BuildStatus.TORN_DOWN) {
       message += '## 🛠 Actions\n*(Trigger actions by clicking the checkboxes)*\n';
       if (!build.isStatic) message += `- [ ] Redeploy Environment\n`;
-      if (await this.containsFastlyDeployment(deploys)) {
-        if ((await this.fastly.getServiceDashboardUrl(build.uuid, 'fastly')) != null) {
-          message += `- [ ] Purge Fastly Service Cache\n`;
-        }
-      }
     }
 
     if (build.trackDefaultBranches) {
@@ -829,7 +798,7 @@ export default class ActivityStream extends BaseService {
         );
         return '';
       });
-      message += await this.dashboardBlock(build, deploys).catch((e) => {
+      message += await this.dashboardBlock(build).catch((e) => {
         logger.error(
           `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${e}`
         );
@@ -862,7 +831,7 @@ export default class ActivityStream extends BaseService {
           );
           return '';
         });
-        message += await this.dashboardBlock(build, deploys).catch((e) => {
+        message += await this.dashboardBlock(build).catch((e) => {
           logger.error(
             `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${e}`
           );
@@ -880,7 +849,7 @@ export default class ActivityStream extends BaseService {
           );
           return '';
         });
-        message += await this.dashboardBlock(build, deploys).catch((e) => {
+        message += await this.dashboardBlock(build).catch((e) => {
           logger.error(
             `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${e}`
           );
@@ -1050,16 +1019,13 @@ export default class ActivityStream extends BaseService {
     return message + '\n';
   }
 
-  private async dashboardBlock(build: Build, deploys: Deploy[]) {
-    const datadogLogFastlyUrl = new URL('https://app.datadoghq.com/logs');
+  private async dashboardBlock(build: Build) {
     const datadogLogUrl = new URL('https://app.datadoghq.com/logs');
     const datadogServerlessUrl = new URL('https://app.datadoghq.com/functions');
     const datadogTraceUrl = new URL('https://app.datadoghq.com/apm/traces');
     const datadogRumSessionsUrl = new URL('https://app.datadoghq.com/rum/explorer');
     const datadogContainersUrl = new URL('https://app.datadoghq.com/containers');
 
-    datadogLogFastlyUrl.searchParams.append('query', `source:fastly @request.host:*${build.uuid}*`);
-    datadogLogFastlyUrl.searchParams.append('paused', 'false');
     datadogLogUrl.searchParams.append('query', `env:lifecycle-${build.uuid}`);
     datadogLogUrl.searchParams.append('paused', 'false');
     datadogServerlessUrl.searchParams.append('text_search', `env:*${build.uuid}*`);
@@ -1075,18 +1041,11 @@ export default class ActivityStream extends BaseService {
     message += '<summary>Dashboards</summary>\n\n';
     message += '|| Links |\n';
     message += '| ------------- | ------------- |\n';
-    message += `| Fastly Logs | ${datadogLogFastlyUrl.href} |\n`;
     message += `| Containers | ${datadogContainersUrl.href} |\n`;
     message += `| Lifecycle Env Logs | ${datadogLogUrl.href} |\n`;
     message += `| Tracing | ${datadogTraceUrl.href} |\n`;
     message += `| Serverless | ${datadogServerlessUrl.href} |\n`;
     message += `| RUM (If Enabled) | ${datadogRumSessionsUrl.href} |\n`;
-    if (await this.containsFastlyDeployment(deploys)) {
-      const fastlyServiceDashboardUrl: URL = await this.fastly.getServiceDashboardUrl(build.uuid, 'fastly');
-      if (fastlyServiceDashboardUrl) {
-        message += `| Fastly Dashboard | ${fastlyServiceDashboardUrl.href} |\n`;
-      }
-    }
     message += '</details>\n';
 
     return message;
@@ -1127,33 +1086,6 @@ export default class ActivityStream extends BaseService {
       );
     } catch (error) {
       logger.child({ error }).debug(`[BUILD ${uuid}][manageDeployments] error`);
-    }
-  }
-
-  private async purgeFastlyServiceCache(uuid: string) {
-    try {
-      const computeShieldServiceId = await this.fastly.getFastlyServiceId(uuid, 'compute-shield');
-      logger.child({ computeShieldServiceId }).debug(`[BUILD ${uuid}][activityStream][fastly] computeShieldServiceId`);
-      if (computeShieldServiceId) {
-        await this.fastly.purgeAllServiceCache(computeShieldServiceId, uuid, 'fastly');
-      }
-
-      const optimizelyServiceId = await this.fastly.getFastlyServiceId(uuid, 'optimizely');
-      logger.child({ optimizelyServiceId }).debug(`[BUILD ${uuid}][activityStream][fastly] optimizelyServiceId`);
-      if (optimizelyServiceId) {
-        await this.fastly.purgeAllServiceCache(optimizelyServiceId, uuid, 'optimizely');
-      }
-
-      const fastlyServiceId = await this.fastly.getFastlyServiceId(uuid, 'fastly');
-      logger.child({ fastlyServiceId }).debug(`[BUILD ${uuid}][activityStream][fastly] fastlyServiceId`);
-      if (fastlyServiceId) {
-        await this.fastly.purgeAllServiceCache(fastlyServiceId, uuid, 'fastly');
-      }
-      logger
-        .child({ fastlyServiceId })
-        .info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] success`);
-    } catch (error) {
-      logger.child({ error }).info(`[BUILD ${uuid}][activityStream][fastly][purgeFastlyServiceCache] error`);
     }
   }
 }
