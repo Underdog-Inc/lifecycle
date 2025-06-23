@@ -612,6 +612,7 @@ export default class ActivityStream extends BaseService {
       const isDeployed = buildStatus === BuildStatus.DEPLOYED;
       let deployStatus;
       const hasDeployLabel = labels?.includes(Labels.DEPLOY);
+      //TODO review the env tag here, shoudl it be tools or dev?
       const tags = { uuid, repositoryName, branchName, env: 'prd', service: 'lifecycle-job', statsEvent: 'deployment' };
       const eventDetails = {
         title: 'Deployment Finished',
@@ -746,7 +747,7 @@ export default class ActivityStream extends BaseService {
 
     const nextStepsList = [
       '### Next steps:\n\n',
-      '- Review the [Lifecycle UI](${LIFECYCLE_UI_HOSTHAME_WITH_SCHEME}/build/${build.uuid})\n',
+      '- Review the [Ephemeral Env UI](${LIFECYCLE_UI_HOSTHAME_WITH_SCHEME}/build/${build.uuid})\n',
     ].reduce((acc, curr) => acc + curr, '');
     const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
     const isBuilding = [BuildStatus.BUILDING, BuildStatus.BUILT].includes(build.status as BuildStatus);
@@ -756,7 +757,7 @@ export default class ActivityStream extends BaseService {
     const isPending = [BuildStatus.QUEUED, BuildStatus.TORN_DOWN].includes(build.status as BuildStatus);
     if (isPending) {
       message += '## ⏳ Pending\n';
-      message += `Lifecycle Environment either has been torn down or does not exist.`;
+      message += `The Ephemeral Environment has been torn down or does not exist.`;
       if (isBot) {
         message += `\n\n**This PR is created by a bot user, add ${Labels.DEPLOY} to build environment**`;
       } else {
@@ -839,7 +840,7 @@ export default class ActivityStream extends BaseService {
         });
       } else if (build.status === BuildStatus.CONFIG_ERROR) {
         message += `## ⚠️ Configuration Error\n`;
-        message += `Lifecycle configuration file is found but there is a problem with the file.\n\n`;
+        message += `Ephemeral environment configuration file (.lifecycle.yaml) is found but there is a problem with the file.\n\n`;
       } else if (build.status === BuildStatus.DEPLOYED) {
         message += '## ✅ Deployed\n';
         message += `We've deployed your code. Here's where you can find your services:\n`;
@@ -973,7 +974,7 @@ export default class ActivityStream extends BaseService {
 
   private async environmentBlock(build: Build): Promise<string> {
     let message = '';
-    message += '### Lifecycle Environments\n';
+    message += '### Ephemeral Environments\n';
     message += '| Service | Branch | Link |\n';
     message += '|---|---|---|\n';
 
@@ -1042,7 +1043,7 @@ export default class ActivityStream extends BaseService {
     message += '|| Links |\n';
     message += '| ------------- | ------------- |\n';
     message += `| Containers | ${datadogContainersUrl.href} |\n`;
-    message += `| Lifecycle Env Logs | ${datadogLogUrl.href} |\n`;
+    message += `| Ephemeral Env Logs | ${datadogLogUrl.href} |\n`;
     message += `| Tracing | ${datadogTraceUrl.href} |\n`;
     message += `| Serverless | ${datadogServerlessUrl.href} |\n`;
     message += `| RUM (If Enabled) | ${datadogRumSessionsUrl.href} |\n`;
