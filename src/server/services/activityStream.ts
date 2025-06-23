@@ -612,7 +612,7 @@ export default class ActivityStream extends BaseService {
       const isDeployed = buildStatus === BuildStatus.DEPLOYED;
       let deployStatus;
       const hasDeployLabel = labels?.includes(Labels.DEPLOY);
-      //TODO review the env tag here, shoudl it be tools or dev?
+      //TODO review the env tag here, should it be tools or dev?
       const tags = { uuid, repositoryName, branchName, env: 'prd', service: 'lifecycle-job', statsEvent: 'deployment' };
       const eventDetails = {
         title: 'Deployment Finished',
