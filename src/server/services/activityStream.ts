@@ -551,7 +551,7 @@ export default class ActivityStream extends BaseService {
     message += `url: ${build.uuid}\n`;
 
     message +=
-      '\n\n// **Override Environment Variables:** *ENV:[KEY]:[VALUE]* --- Example\n*ENV:NATIONAL_CHAMPION:THE_OHIO_STATE_UNIVERSITY🏈*\n';
+      '\n\n// **Override Environment Variables:** *ENV:[KEY]:[VALUE]* --- Example\n*ENV:NBA_CHAMPS:OKLAHOMA_CITY_THUNDER⚡🏀💙🧡*\n';
     message += this.generateEnvBlockForBuild(build);
 
     message += `\n\n${CommentParser.FOOTER}\n\n`;
@@ -664,7 +664,7 @@ export default class ActivityStream extends BaseService {
         const tags = { error: 'uncaptured_status', result: 'error' };
         metrics.increment('total', tags).event(eventDetails.title, eventDetails.description);
       }
-      message = `### 💻✨ Your environment ${deployStatus}.\n`;
+      message = `### 💻✨ Your ephemeral environment ${deployStatus}.\n`;
       if (!hasDeployLabel && !isBot && isPending && isOpen) {
         message += TO_DEPLOY_THIS_ENV;
       }
@@ -747,7 +747,7 @@ export default class ActivityStream extends BaseService {
 
     const nextStepsList = [
       '### Next steps:\n\n',
-      '- Review the [Ephemeral Env UI](${LIFECYCLE_UI_HOSTHAME_WITH_SCHEME}/build/${build.uuid})\n',
+      '- Review the [Ephemeral Environment UI](${LIFECYCLE_UI_HOSTHAME_WITH_SCHEME}/build/${build.uuid})\n',
     ].reduce((acc, curr) => acc + curr, '');
     const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
     const isBuilding = [BuildStatus.BUILDING, BuildStatus.BUILT].includes(build.status as BuildStatus);
@@ -974,7 +974,7 @@ export default class ActivityStream extends BaseService {
 
   private async environmentBlock(build: Build): Promise<string> {
     let message = '';
-    message += '### Ephemeral Environments\n';
+    message += '### Ephemeral Environment Details\n';
     message += '| Service | Branch | Link |\n';
     message += '|---|---|---|\n';
 
@@ -1039,7 +1039,7 @@ export default class ActivityStream extends BaseService {
     datadogContainersUrl.searchParams.append('paused', 'false');
 
     let message = '<details>\n';
-    message += '<summary>Dashboards</summary>\n\n';
+    message += '<summary>Observability</summary>\n\n';
     message += '|| Links |\n';
     message += '| ------------- | ------------- |\n';
     message += `| Containers | ${datadogContainersUrl.href} |\n`;
