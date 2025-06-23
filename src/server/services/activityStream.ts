@@ -1039,11 +1039,11 @@ export default class ActivityStream extends BaseService {
     datadogContainersUrl.searchParams.append('paused', 'false');
 
     let message = '<details>\n';
-    message += '<summary>Observability</summary>\n\n';
+    message += '<summary>Useful Links</summary>\n\n';
     message += '|| Links |\n';
     message += '| ------------- | ------------- |\n';
     message += `| Containers | ${datadogContainersUrl.href} |\n`;
-    message += `| Ephemeral Env Logs | ${datadogLogUrl.href} |\n`;
+    message += `| Logs | ${datadogLogUrl.href} |\n`;
     message += `| Tracing | ${datadogTraceUrl.href} |\n`;
     message += `| Serverless | ${datadogServerlessUrl.href} |\n`;
     message += `| RUM (If Enabled) | ${datadogRumSessionsUrl.href} |\n`;
