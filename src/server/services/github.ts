@@ -140,14 +140,18 @@ export default class GithubService extends Service {
           lifecycleConfig,
         });
 
-        // if auto deploy, add deploy label`
-        if (isDeploy)
+        // if auto deploy, add deploy label
+        if (isDeploy) {
+          const currentLabels = labels.map((l) => l.name);
+          const updatedLabels = [...new Set([...currentLabels, Labels.DEPLOY])];
+
           await github.updatePullRequestLabels({
             installationId,
             pullRequestNumber: number,
             fullName,
-            labels: labels.map((l) => l.name).concat(['lifecycle-deploy!']),
+            labels: updatedLabels,
           });
+        }
       } else if (isClosed) {
         build = await this.db.models.Build.findOne({
           pullRequestId,
@@ -157,7 +161,7 @@ export default class GithubService extends Service {
           return;
         }
         await this.db.services.BuildService.deleteBuild(build);
-        // remove lifecycle-deploy! label on PR close
+        // remove the `lets-go!` label on PR close
         await github.updatePullRequestLabels({
           installationId,
           pullRequestNumber: number,
@@ -246,8 +250,8 @@ export default class GithubService extends Service {
       );
 
       if (pullRequest.deployOnUpdate === false) {
-        // when pullRequest.deployOnUpdate is false, it means that there is no `lifecycle-deploy!` label
-        // or there is `lifecycle-disabled!` label in the PR
+        // when pullRequest.deployOnUpdate is false, it means that there is no `lets-go!` label
+        // or there is `let-it-go!` label in the PR
         return this.db.services.BuildService.deleteBuild(build);
       }
 

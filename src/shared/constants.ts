@@ -117,8 +117,8 @@ export enum CommentParser {
 }
 
 export enum Labels {
-  DEPLOY = 'lifecycle-deploy!',
-  DISABLED = 'lifecycle-disabled!',
+  DEPLOY = 'lets-go!',
+  DISABLED = 'let-it-go!',
   DEPLOY_STG = 'lifecycle-stg-deploy!',
   ENABLE_LIFECYCLE_STATUS_COMMENTS = 'lifecycle-status-comments!', // deprecated, no longer used
   DISABLE_BUILD_COMMENTS = 'disable-build-comments!', // add this label to disable build status comments
