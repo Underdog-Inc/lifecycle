@@ -179,7 +179,7 @@ export default class GithubService extends Service {
           return;
         }
         await this.db.services.BuildService.deleteBuild(build);
-        // remove the enabled label(s) on PR close
+        // remove the PrTriggerLabels.DEPLOY label(s) on PR close
         const currentLabels = labels.map((l) => l.name);
         const deployLabelsToRemove = Array.isArray(PrTriggerLabels.DEPLOY)
           ? PrTriggerLabels.DEPLOY
@@ -274,8 +274,8 @@ export default class GithubService extends Service {
       );
 
       if (pullRequest.deployOnUpdate === false) {
-        // when pullRequest.deployOnUpdate is false, it means that there is no `lets-go!` label
-        // or there is `let-it-go!` label in the PR
+        // when pullRequest.deployOnUpdate is false, it means that there are no PrTriggerLabels.DEPLOY labels
+        // or there are PrTriggerLabels.DISABLED labels in the PR
         return this.db.services.BuildService.deleteBuild(build);
       }
 

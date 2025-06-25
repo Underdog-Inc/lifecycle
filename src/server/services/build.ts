@@ -74,7 +74,7 @@ export default class BuildService extends BaseService {
         if (build.pullRequest?.repository != null) {
           const isActive = await this.db.services.PullRequest.lifecycleEnabledForPullRequest(build.pullRequest);
           // Either we want the PR status to be closed or
-          // if deployOnUpdate at the PR level (with the let-it-go! label)
+          // if deployOnUpdate at the PR level (with the PrTriggerLabels.DEPLOY labels)
           if (
             build.pullRequest.status === 'closed' ||
             (isActive === false && build.pullRequest.deployOnUpdate === false)
