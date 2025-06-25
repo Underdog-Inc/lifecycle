@@ -416,7 +416,7 @@ export default class BuildService extends BaseService {
   }
 
   /**
-   * Deploy an existing build/PR (usually happens when adding the lets-go! label)
+   * Deploy an existing build/PR (usually happens when adding a label(s) listed in PrTriggerLabels.DEPLOY)
    * @param build Build associates to a PR
    * @param deploy deploy on changed?
    */
