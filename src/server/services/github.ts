@@ -19,7 +19,13 @@ import _ from 'lodash';
 import Service from './_service';
 import rootLogger from 'server/lib/logger';
 import { IssueCommentEvent, PullRequestEvent, PushEvent } from '@octokit/webhooks-types';
-import { GithubPullRequestActions, GithubWebhookTypes, PullRequestStatus, Labels } from 'shared/constants';
+import {
+  GithubPullRequestActions,
+  GithubWebhookTypes,
+  PullRequestStatus,
+  Labels,
+  PrTriggerLabels,
+} from 'shared/constants';
 import { JOB_VERSION } from 'shared/config';
 import { NextApiRequest } from 'next';
 import * as github from 'server/lib/github';
@@ -143,7 +149,19 @@ export default class GithubService extends Service {
         // if auto deploy, add deploy label
         if (isDeploy) {
           const currentLabels = labels.map((l) => l.name);
-          const updatedLabels = [...new Set([...currentLabels, Labels.DEPLOY])];
+          const hasDeployLabel = currentLabels.some((label) =>
+            Array.isArray(PrTriggerLabels.DEPLOY)
+              ? PrTriggerLabels.DEPLOY.includes(label)
+              : label === PrTriggerLabels.DEPLOY
+          );
+          const updatedLabels = hasDeployLabel
+            ? currentLabels
+            : [
+                ...new Set([
+                  ...currentLabels,
+                  ...(Array.isArray(PrTriggerLabels.DEPLOY) ? PrTriggerLabels.DEPLOY : [PrTriggerLabels.DEPLOY]),
+                ]),
+              ];
 
           await github.updatePullRequestLabels({
             installationId,
@@ -161,12 +179,18 @@ export default class GithubService extends Service {
           return;
         }
         await this.db.services.BuildService.deleteBuild(build);
-        // remove the `lets-go!` label on PR close
+        // remove the enabled label(s) on PR close
+        const currentLabels = labels.map((l) => l.name);
+        const deployLabelsToRemove = Array.isArray(PrTriggerLabels.DEPLOY)
+          ? PrTriggerLabels.DEPLOY
+          : [PrTriggerLabels.DEPLOY];
+        const updatedLabels = currentLabels.filter((label) => !deployLabelsToRemove.includes(label));
+
         await github.updatePullRequestLabels({
           installationId,
           pullRequestNumber: number,
           fullName,
-          labels: labels.map((l) => l.name).filter((v) => v !== Labels.DEPLOY),
+          labels: updatedLabels,
         });
       }
     } catch (error) {
@@ -485,7 +509,10 @@ export default class GithubService extends Service {
     const branch = pullRequest?.branchName;
     try {
       const isBot = await this.db.services.BotUser.isBotUser(user);
-      const hasDeployLabel = labelNames.includes(Labels.DEPLOY);
+      const deployLabels = Array.isArray(PrTriggerLabels.DEPLOY)
+        ? PrTriggerLabels.DEPLOY.map((label) => label.toLowerCase())
+        : [PrTriggerLabels.DEPLOY];
+      const hasDeployLabel = labelNames.some((label) => deployLabels.includes(label));
       const isDeploy = hasDeployLabel || autoDeploy;
       const isKillSwitch = await enableKillSwitch({
         isBotUser: isBot,
