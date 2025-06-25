@@ -42,7 +42,7 @@ const logger = rootLogger.child({
   filename: 'services/activityStream.ts',
 });
 
-const TO_DEPLOY_THIS_ENV = `To deploy this environment, just add a \`${PrTriggerLabels.DEPLOY}\` label. Add a \`${PrTriggerLabels.DISABLED}\` to do the opposite. ↗️\n\n`;
+const TO_DEPLOY_THIS_ENV = `To deploy this environment, just add a \`${PrTriggerLabels.DEPLOY[0]}\` label. Add a \`${PrTriggerLabels.DISABLED[0]}\` to do the opposite. ↗️\n\n`;
 const COMMENT_EDIT_DESCRIPTION = `You can use the section below to redeploy and update the dev environment for this pull request.\n\n\n`;
 const GIT_SERVICE_URL = 'https://github.com';
 
