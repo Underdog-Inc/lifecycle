@@ -800,12 +800,12 @@ export default class ActivityStream extends BaseService {
 
   private generatePendingMessage(isBot: boolean): string {
     let message = '## ⏳ Pending\n';
-    message += 'The Ephemeral Environment has been torn down or does not exist.';
+    message += 'The Ephemeral Environment is being torn down or does not exist.';
 
     if (isBot) {
       message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY[0]} to build environment**`;
     } else {
-      message += `\n\n*Note: If ${PrTriggerLabels.DISABLED[0]} label present, remove to build environment*`;
+      message += `\n\n*Note: If the \`${PrTriggerLabels.DISABLED[0]}\` label is present, remove it to build the environment*`;
     }
 
     return message;
