@@ -125,7 +125,7 @@ export enum Labels {
 
 export const PrTriggerLabels = {
   DEPLOY: ['lets-go!', 'lifecycle-deploy!'],
-  DISABLED: ['let-it-go!', 'lifecycle-disabled!'],
+  DISABLED: ['auto-deploy-disabled!', 'lifecycle-disabled!'],
 };
 
 export enum FeatureFlags {

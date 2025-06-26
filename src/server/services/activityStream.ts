@@ -45,7 +45,7 @@ const logger = rootLogger.child({
 const TO_DEPLOY_THIS_ENV = `
 **To deploy this environment:** Add the **\`${PrTriggerLabels.DEPLOY[0]}\`** label to this PR
 
-**To disable deployments:** Add the **\`${PrTriggerLabels.DISABLED[0]}\`** label instead
+**To disable auto deployments:** Add the **\`${PrTriggerLabels.DISABLED[0]}\`** label instead
 `;
 const COMMENT_EDIT_DESCRIPTION = `You can use the section below to redeploy and update the dev environment for this pull request.\n\n\n`;
 const GIT_SERVICE_URL = 'https://github.com';
