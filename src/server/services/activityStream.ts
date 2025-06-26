@@ -762,9 +762,9 @@ export default class ActivityStream extends BaseService {
       message += '## ⏳ Pending\n';
       message += `The Ephemeral Environment has been torn down or does not exist.`;
       if (isBot) {
-        message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY} to build environment**`;
+        message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY[0]} to build environment**`;
       } else {
-        message += `\n\n*Note: If ${PrTriggerLabels.DISABLED} label present, remove to build environment*`;
+        message += `\n\n*Note: If ${PrTriggerLabels.DISABLED[0]} label present, remove to build environment*`;
       }
     } else if (isBuilding) {
       message += '## 🏗️ Building\n';
