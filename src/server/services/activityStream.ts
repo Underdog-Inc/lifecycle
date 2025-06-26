@@ -768,7 +768,7 @@ export default class ActivityStream extends BaseService {
       if (isBot) {
         message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY[0]} to build environment**`;
       } else {
-        message += `\n\n*Note: If ${PrTriggerLabels.DISABLED[0]} label present, remove to build environment*`;
+        message += `\n\n**Note: If \`${PrTriggerLabels.DISABLED[0]}\` label present, remove to build environment**`;
       }
     } else if (isBuilding) {
       message += '## 🏗️ Building\n';
