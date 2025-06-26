@@ -746,131 +746,176 @@ export default class ActivityStream extends BaseService {
    * @returns
    */
   private async generateStatusCommentForBuild(build: Build, deploys: Deploy[], pullRequest: PullRequest) {
+    const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
+    const buildStatus = build.status as BuildStatus;
+    const deployOnUpdate = pullRequest.deployOnUpdate;
+
     let message = '';
 
-    const nextStepsList = [
-      '### Next steps:\n\n',
-      '- Review the [Ephemeral Environment UI](${LIFECYCLE_UI_HOSTHAME_WITH_SCHEME}/build/${build.uuid})\n',
-    ].reduce((acc, curr) => acc + curr, '');
-    const isBot = await this.db.services.BotUser.isBotUser(pullRequest?.githubLogin);
-    const isBuilding = [BuildStatus.BUILDING, BuildStatus.BUILT].includes(build.status as BuildStatus);
-    const isDeploying = build.status === BuildStatus.DEPLOYING;
-    const isAutoDeployingBuild = pullRequest.deployOnUpdate && build.status === BuildStatus.BUILT;
-    const isReadyToDeployBuild = !pullRequest.deployOnUpdate && build.status === BuildStatus.BUILT;
-    const isPending = [BuildStatus.QUEUED, BuildStatus.TORN_DOWN].includes(build.status as BuildStatus);
-    if (isPending) {
-      message += '## ⏳ Pending\n';
-      message += `The Ephemeral Environment has been torn down or does not exist.`;
-      if (isBot) {
-        message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY[0]} to build environment**`;
-      } else {
-        message += `\n\n*Note: If ${PrTriggerLabels.DISABLED[0]} label present, remove to build environment*`;
+    try {
+      if (this.isPendingStatus(buildStatus)) {
+        message = this.generatePendingMessage(isBot);
+      } else if (this.isBuildingStatus(buildStatus)) {
+        message = await this.generateBuildingMessage(build, deploys, deployOnUpdate);
+      } else if (this.isDeployingStatus(buildStatus, deployOnUpdate)) {
+        message = await this.generateDeployingMessage(build);
+      } else if (this.isReadyToDeployStatus(buildStatus, deployOnUpdate)) {
+        message = await this.generateReadyToDeployMessage(build);
+      } else if (this.isTornDown(buildStatus)) {
+        message = this.generateTornDownMessage(build);
+      } else if (deployOnUpdate) {
+        message = await this.generateDeployedMessage(build, deploys, buildStatus);
       }
-    } else if (isBuilding) {
-      message += '## 🏗️ Building\n';
-      message += 'We are busy building your code...\n';
-      message += '## Build Status\n';
-      message += await this.buildStatusBlock(build, deploys, null).catch((error) => {
-        logger
-          .child({ build, deploys, error })
-          .error(`[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate build status`);
-        return '';
-      });
 
-      message += `\nHere's where you can find your services after they're deployed:\n`;
-      message += await this.environmentBlock(build).catch((error) => {
-        logger
-          .child({ build, error })
-          .error(
-            `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate environment comment block`
-          );
-        return '';
-      });
+      message += `\n\n${
+        isStaging() ? 'stg ' : ''
+      }status comment: enabled. Mission control statuses may be slightly out of sync.\n`;
 
-      if (pullRequest.deployOnUpdate === false) {
-        message += TO_DEPLOY_THIS_ENV;
-      } else {
-        message += `\nWe'll deploy your code once we've finished this build step.`;
-      }
-    } else if (isAutoDeployingBuild || isDeploying) {
-      message += '## 🚀 Deploying\n';
-      message += `We're deploying your code. Please stand by....\n\n`;
-      message += `Here's where you can find your services after they're deployed:\n`;
-      message += await this.environmentBlock(build).catch((e) => {
-        logger.error(
-          `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate environment comment block: ${e}`
-        );
-        return '';
-      });
-      message += await this.dashboardBlock(build).catch((e) => {
-        logger.error(
-          `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${e}`
-        );
-        return '';
-      });
-    } else if (isReadyToDeployBuild) {
-      message += '## 🚀 Ready to deploy\n';
-      message += `Your code is built. We're ready to deploy whenever you are.\n`;
-      message += await this.deployingBlock(build).catch((e) => {
-        logger.error(
-          `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate deployment status: ${e}`
-        );
-        return '';
-      });
-      message += TO_DEPLOY_THIS_ENV;
-    } else if (pullRequest.deployOnUpdate) {
-      message = '';
-      if (build.status === BuildStatus.ERROR) {
-        message += `## ⚠️ Deployed with Error\n`;
-        message += `There was a problem deploying your code. Some services may have not rolled out successfully. Here are the URLs for your services:\n\n`;
-        message += await this.buildStatusBlock(build, deploys, this.isBuildableDeployType).catch((e) => {
-          logger.error(
-            `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate build status: ${e}`
-          );
-          return '';
-        });
-        message += await this.environmentBlock(build).catch((e) => {
-          logger.error(
-            `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate environment comment block: ${e}`
-          );
-          return '';
-        });
-        message += await this.dashboardBlock(build).catch((e) => {
-          logger.error(
-            `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${e}`
-          );
-          return '';
-        });
-      } else if (build.status === BuildStatus.CONFIG_ERROR) {
-        message += `## ⚠️ Configuration Error\n`;
-        message += `Ephemeral environment configuration file (.lifecycle.yaml) is found but there is a problem with the file.\n\n`;
-      } else if (build.status === BuildStatus.DEPLOYED) {
-        message += '## ✅ Deployed\n';
-        message += `We've deployed your code. Here's where you can find your services:\n`;
-        message += await this.environmentBlock(build).catch((e) => {
-          logger.error(
-            `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate environment comment block: ${e}`
-          );
-          return '';
-        });
-        message += await this.dashboardBlock(build).catch((e) => {
-          logger.error(
-            `[BUILD ${build.uuid}] (Full YAML Support: ${build.enableFullYaml}) Unable to generate dashboard: ${e}`
-          );
-          return '';
-        });
-      } else {
-        message += `## ⚠️ Unexpected Build Status\n`;
-        message += `The build status is ${build?.status || 'undefined'}.\n\n`;
-        message += nextStepsList;
-      }
+      return message;
+    } catch (error) {
+      logger.error(`[BUILD ${build.uuid}] Failed to generate status comment: ${error}`);
+      return this.generateFallbackMessage(build);
+    }
+  }
+
+  private isPendingStatus(status: BuildStatus): boolean {
+    return [BuildStatus.QUEUED, BuildStatus.TEARING_DOWN].includes(status);
+  }
+
+  private isBuildingStatus(status: BuildStatus): boolean {
+    return [BuildStatus.BUILDING, BuildStatus.BUILT].includes(status);
+  }
+
+  private isDeployingStatus(status: BuildStatus, deployOnUpdate: boolean): boolean {
+    return status === BuildStatus.DEPLOYING || (deployOnUpdate && status === BuildStatus.BUILT);
+  }
+
+  private isReadyToDeployStatus(status: BuildStatus, deployOnUpdate: boolean): boolean {
+    return !deployOnUpdate && status === BuildStatus.BUILT;
+  }
+
+  private isTornDown(status: BuildStatus): boolean {
+    return status === BuildStatus.TORN_DOWN;
+  }
+
+  private generatePendingMessage(isBot: boolean): string {
+    let message = '## ⏳ Pending\n';
+    message += 'The Ephemeral Environment has been torn down or does not exist.';
+
+    if (isBot) {
+      message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY[0]} to build environment**`;
+    } else {
+      message += `\n\n*Note: If ${PrTriggerLabels.DISABLED[0]} label present, remove to build environment*`;
     }
 
-    message += `\n\n${
-      isStaging() ? 'stg ' : ''
-    }status comment: enabled. Mission control statuses may be slightly out of sync.\n`;
+    return message;
+  }
+
+  private async generateBuildingMessage(build: Build, deploys: Deploy[], deployOnUpdate: boolean): Promise<string> {
+    let message = '## 🏗️ Building\n';
+    message += 'We are busy building your code...\n';
+    message += '## Build Status\n';
+
+    message += await this.buildStatusBlock(build, deploys, null).catch(() => '');
+    message += "\nHere's where you can find your services after they're deployed:\n";
+    message += await this.environmentBlock(build).catch(() => '');
+
+    if (!deployOnUpdate) {
+      message += TO_DEPLOY_THIS_ENV;
+    } else {
+      message += "\nWe'll deploy your code once we've finished this build step.";
+    }
 
     return message;
+  }
+
+  private async generateDeployingMessage(build: Build): Promise<string> {
+    let message = '## 🚀 Deploying\n';
+    message += "We're deploying your code. Please stand by....\n\n";
+    message += "Here's where you can find your services after they're deployed:\n";
+    message += await this.environmentBlock(build).catch(() => '');
+    message += await this.dashboardBlock(build).catch(() => '');
+
+    return message;
+  }
+
+  private async generateReadyToDeployMessage(build: Build): Promise<string> {
+    let message = '## 🚀 Ready to deploy\n';
+    message += "Your code is built. We're ready to deploy whenever you are.\n";
+    message += await this.deployingBlock(build).catch(() => '');
+    message += TO_DEPLOY_THIS_ENV;
+
+    return message;
+  }
+
+  private async generateDeployedMessage(build: Build, deploys: Deploy[], buildStatus: BuildStatus): Promise<string> {
+    switch (buildStatus) {
+      case BuildStatus.ERROR:
+        return await this.generateErrorMessage(build, deploys);
+      case BuildStatus.CONFIG_ERROR:
+        return this.generateConfigErrorMessage();
+      case BuildStatus.DEPLOYED:
+        return await this.generateSuccessMessage(build);
+      default:
+        return this.generateUnexpectedStatusMessage(build);
+    }
+  }
+
+  private async generateErrorMessage(build: Build, deploys: Deploy[]): Promise<string> {
+    let message = '## ⚠️ Deployed with Error\n';
+    message +=
+      'There was a problem deploying your code. Some services may have not rolled out successfully. Here are the URLs for your services:\n\n';
+    message += await this.buildStatusBlock(build, deploys, this.isBuildableDeployType).catch(() => '');
+    message += await this.environmentBlock(build).catch(() => '');
+    message += await this.dashboardBlock(build).catch(() => '');
+
+    return message;
+  }
+
+  private generateConfigErrorMessage(): string {
+    return (
+      '## ⚠️ Configuration Error\n' +
+      'Ephemeral environment configuration file (.lifecycle.yaml) is found but there is a problem with the file.\n\n'
+    );
+  }
+
+  private async generateSuccessMessage(build: Build): Promise<string> {
+    let message = '## ✅ Deployed\n';
+    message += "We've deployed your code. Here's where you can find your services:\n";
+    message += await this.environmentBlock(build).catch(() => '');
+    message += await this.dashboardBlock(build).catch(() => '');
+
+    return message;
+  }
+
+  private generateUnexpectedStatusMessage(build: Build): string {
+    const nextStepsList =
+      '### Next steps:\n\n' +
+      `- Review the [Ephemeral Environment UI](${process.env.LIFECYCLE_UI_HOSTNAME_WITH_SCHEME}/build/${build.uuid})\n`;
+
+    return (
+      `## ⚠️ Unexpected Build Status\n` + `The build status is ${build?.status || 'undefined'}.\n\n` + nextStepsList
+    );
+  }
+
+  private generateFallbackMessage(build: Build): string {
+    return (
+      `## ⚠️ Error Generating Status\n` +
+      `Unable to generate status message for build ${build.uuid}.\n\n` +
+      `${isStaging() ? 'stg ' : ''}status comment: enabled.\n`
+    );
+  }
+
+  private generateTornDownMessage(build: Build): string {
+    let message = '## 🗑️ Torn Down\n';
+    message += 'The ephemeral environment has been torn down and is no longer available.\n\n';
+
+    const nextStepsList =
+      '### Next steps:\n\n' +
+      `- Add a \`${PrTriggerLabels.DEPLOY[0]}\` label to redeploy the environment\n` +
+      `- Review the [Ephemeral Environment UI](${process.env.LIFECYCLE_UI_HOSTNAME_WITH_SCHEME}/build/${build.uuid})\n`;
+
+    return message + nextStepsList;
   }
 
   private isBuildableDeployType(deploy: Deploy, fullYamlSupport: boolean, orgChart: string): boolean {
