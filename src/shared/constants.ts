@@ -117,13 +117,16 @@ export enum CommentParser {
 }
 
 export enum Labels {
-  DEPLOY = 'lifecycle-deploy!',
-  DISABLED = 'lifecycle-disabled!',
   DEPLOY_STG = 'lifecycle-stg-deploy!',
   ENABLE_LIFECYCLE_STATUS_COMMENTS = 'lifecycle-status-comments!', // deprecated, no longer used
   DISABLE_BUILD_COMMENTS = 'disable-build-comments!', // add this label to disable build status comments
   PURGE_FASTLY_SERVICE_CACHE = 'lifecycle-cache-purge!',
 }
+
+export const PrTriggerLabels = {
+  DEPLOY: ['lets-go!', 'lifecycle-deploy!'],
+  DISABLED: ['auto-deploy-disabled!', 'lifecycle-disabled!'],
+};
 
 export enum FeatureFlags {
   // if enabled will not set defaultUUID for services that are not checked or don't exisit in the environment

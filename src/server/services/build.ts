@@ -74,7 +74,7 @@ export default class BuildService extends BaseService {
         if (build.pullRequest?.repository != null) {
           const isActive = await this.db.services.PullRequest.lifecycleEnabledForPullRequest(build.pullRequest);
           // Either we want the PR status to be closed or
-          // if deployOnUpdate at the PR level (with the lifecycle-disabled! label)
+          // if deployOnUpdate at the PR level (with the PrTriggerLabels.DEPLOY labels)
           if (
             build.pullRequest.status === 'closed' ||
             (isActive === false && build.pullRequest.deployOnUpdate === false)
@@ -416,7 +416,7 @@ export default class BuildService extends BaseService {
   }
 
   /**
-   * Deploy an existing build/PR (usually happens when adding the lifecycle-deploy! label)
+   * Deploy an existing build/PR (usually happens when adding a label(s) listed in PrTriggerLabels.DEPLOY)
    * @param build Build associates to a PR
    * @param deploy deploy on changed?
    */
@@ -946,7 +946,13 @@ export default class BuildService extends BaseService {
         });
         logger.debug(`[BUILD ${build.uuid}] Found ${helmDeploys.length} helm deploys`);
         logger.debug(`[BUILD ${build.uuid}] Found ${k8sDeploys.length} deploys to generate manifests for`);
-        const manifest = k8s.generateManifest({ build, deploys: k8sDeploys, uuid: build.uuid, namespace, serviceAccountName });
+        const manifest = k8s.generateManifest({
+          build,
+          deploys: k8sDeploys,
+          uuid: build.uuid,
+          namespace,
+          serviceAccountName,
+        });
         if (manifest && manifest.replace('---', '').trim().length > 0) {
           await build.$query().patch({ manifest });
           await k8s.applyManifests(build);
