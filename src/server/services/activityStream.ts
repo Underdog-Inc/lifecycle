@@ -891,6 +891,7 @@ export default class ActivityStream extends BaseService {
   private generateUnexpectedStatusMessage(build: Build): string {
     const nextStepsList =
       '### Next steps:\n\n' +
+      // There is no UI btw
       `- Review the [Ephemeral Environment UI](${process.env.LIFECYCLE_UI_HOSTNAME_WITH_SCHEME}/build/${build.uuid})\n`;
 
     return (
@@ -913,6 +914,7 @@ export default class ActivityStream extends BaseService {
     const nextStepsList =
       '### Next steps:\n\n' +
       `- Add a \`${PrTriggerLabels.DEPLOY[0]}\` label to redeploy the environment\n` +
+      // There is no UI btw
       `- Review the [Ephemeral Environment UI](${process.env.LIFECYCLE_UI_HOSTNAME_WITH_SCHEME}/build/${build.uuid})\n`;
 
     return message + nextStepsList;
