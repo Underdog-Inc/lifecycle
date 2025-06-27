@@ -23,8 +23,9 @@ import { customAlphabet, nanoid } from 'nanoid';
 import { BuildEnvironmentVariables } from 'server/lib/buildEnvVariables';
 
 import { Build, Deploy, Environment, Service, BuildServiceOverride } from 'server/models';
-import { BuildStatus, CLIDeployTypes, DeployStatus, DeployTypes, HelmDeployTypes } from 'shared/constants';
+import { BuildStatus, CLIDeployTypes, DeployStatus, DeployTypes } from 'shared/constants';
 import { type DeployOptions } from './deploy';
+import DeployService from './deploy';
 import BaseService from './_service';
 import _ from 'lodash';
 import { JOB_VERSION } from 'shared/config';
@@ -465,6 +466,7 @@ export default class BuildService extends BaseService {
         this.buildImages(build, githubRepositoryId),
         this.deployCLIServices(build, githubRepositoryId),
       ]);
+      logger.debug(`[BUILD ${uuid}] Build results: buildImages=${results[0]}, deployCLIServices=${results[1]}`);
       const success = _.every(results);
       /* Verify that all deploys are successfully built that are active */
       if (success) {
@@ -828,32 +830,42 @@ export default class BuildService extends BaseService {
 
     if (build?.enableFullYaml) {
       try {
-        const results = await Promise.all(
-          deploys
-            .filter((d) => {
-              return (
-                d.active &&
-                (d.deployable.type === DeployTypes.DOCKER ||
-                  d.deployable.type === DeployTypes.GITHUB ||
-                  d.deployable.type === DeployTypes.HELM)
-              );
-            })
-            .map(async (deploy, index) => {
-              if (deploy === undefined) {
-                logger.debug(
-                  "Somehow deploy deploy is undefined here.... That shouldn't be possible? Build deploy length is %s",
-                  build.deploys.length
-                );
-              }
-              await deploy.$query().patchAndFetch({
-                deployPipelineId: null,
-                deployOutput: null,
-              });
-              const result = await this.db.services.Deploy.buildImage(deploy, build.enableFullYaml, index);
-              return result;
-            })
+        const deploysToBuild = deploys.filter((d) => {
+          return (
+            d.active &&
+            (d.deployable.type === DeployTypes.DOCKER ||
+              d.deployable.type === DeployTypes.GITHUB ||
+              d.deployable.type === DeployTypes.HELM)
+          );
+        });
+        logger.debug(
+          `[BUILD ${build.uuid}] Processing ${deploysToBuild.length} deploys for build: ${deploysToBuild
+            .map((d) => d.uuid)
+            .join(', ')}`
         );
-        return _.every(results);
+
+        const results = await Promise.all(
+          deploysToBuild.map(async (deploy, index) => {
+            if (deploy === undefined) {
+              logger.debug(
+                "Somehow deploy deploy is undefined here.... That shouldn't be possible? Build deploy length is %s",
+                build.deploys.length
+              );
+            }
+            await deploy.$query().patchAndFetch({
+              deployPipelineId: null,
+              deployOutput: null,
+            });
+            const result = await this.db.services.Deploy.buildImage(deploy, build.enableFullYaml, index);
+            logger.debug(`[BUILD ${build.uuid}] Deploy ${deploy.uuid} buildImage completed with result: ${result}`);
+            return result;
+          })
+        );
+        const finalResult = _.every(results);
+        logger.debug(
+          `[BUILD ${build.uuid}] Build results for each deploy: ${results.join(', ')}, final: ${finalResult}`
+        );
+        return finalResult;
       } catch (error) {
         logger.error(`[${build.uuid}] Uncaught Docker Build Error: ${error}`);
         return false;
@@ -874,6 +886,7 @@ export default class BuildService extends BaseService {
                 );
               }
               const result = await this.db.services.Deploy.buildImage(deploy, build.enableFullYaml, index);
+              logger.debug(`[BUILD ${build.uuid}] Deploy ${deploy.uuid} buildImage completed with result: ${result}`);
               if (!result) logger.info(`[BUILD ${build?.uuid}][${deploy.uuid}][buildImages] build image unsuccessful`);
               return result;
             })
@@ -899,12 +912,8 @@ export default class BuildService extends BaseService {
     githubRepositoryId: string;
     namespace: string;
   }): Promise<boolean> {
-    logger.debug(`[BUILD ${build.uuid}] Generating manifests for build`);
-
     if (build?.enableFullYaml) {
       try {
-        const k8sDeploys = [];
-        const helmDeploys = [];
         const buildId = build?.id;
 
         const { serviceAccount } = await GlobalConfigService.getInstance().getAllConfigs();
@@ -916,54 +925,76 @@ export default class BuildService extends BaseService {
           role: serviceAccount?.role,
         });
 
-        (
-          await Deploy.query()
-            .where({
-              buildId,
-              ...(githubRepositoryId ? { githubRepositoryId } : {}),
-            })
-            .withGraphFetched({
-              service: {
-                serviceDisks: true,
-              },
-              deployable: true,
-            })
-        ).forEach((d) => {
+        const allDeploys = await Deploy.query()
+          .where({
+            buildId,
+            ...(githubRepositoryId ? { githubRepositoryId } : {}),
+          })
+          .withGraphFetched({
+            service: {
+              serviceDisks: true,
+            },
+            deployable: true,
+          });
+
+        const activeDeploys = allDeploys.filter((d) => d.active);
+
+        // Generate manifests for GitHub/Docker/CLI deploys
+        for (const deploy of activeDeploys) {
+          const deployType = deploy.deployable.type;
           if (
-            d.active &&
-            (d.deployable.type === DeployTypes.GITHUB ||
-              d.deployable.type === DeployTypes.DOCKER ||
-              CLIDeployTypes.has(d.deployable.type) ||
-              HelmDeployTypes.has(d.deployable.type))
+            deployType === DeployTypes.GITHUB ||
+            deployType === DeployTypes.DOCKER ||
+            CLIDeployTypes.has(deployType)
           ) {
-            if (DeployTypes.HELM === d.deployable.type) {
-              helmDeploys.push(d);
-              // Pass keda-proxy as values
-            } else {
-              k8sDeploys.push(d);
+            // Generate individual manifest for this deploy
+            const manifest = k8s.generateDeployManifest({
+              deploy,
+              build,
+              namespace,
+              serviceAccountName,
+            });
+
+            // Store manifest in deploy record
+            if (manifest && manifest.trim().length > 0) {
+              await deploy.$query().patch({ manifest });
             }
           }
-        });
-        logger.debug(`[BUILD ${build.uuid}] Found ${helmDeploys.length} helm deploys`);
-        logger.debug(`[BUILD ${build.uuid}] Found ${k8sDeploys.length} deploys to generate manifests for`);
-        const manifest = k8s.generateManifest({ build, deploys: k8sDeploys, uuid: build.uuid, namespace, serviceAccountName });
-        if (manifest && manifest.replace('---', '').trim().length > 0) {
-          await build.$query().patch({ manifest });
-          await k8s.applyManifests(build);
-          /* Generate the nginx manifests for this new build */
-          await this.db.services.Ingress.ingressManifestQueue.add({
-            buildId,
-          });
-          logger.info(`[DEPLOY ${build.uuid}] Applied generated manifests to k8s cluster`);
         }
-        if (helmDeploys.length > 0) {
-          const deploymentManager = new DeploymentManager(helmDeploys);
+
+        // Use DeploymentManager for all active deploys (both Helm and GitHub types)
+        if (activeDeploys.length > 0) {
+          const deploymentManager = new DeploymentManager(activeDeploys);
           await deploymentManager.deploy();
         }
 
-        const isReady = await k8s.waitForPodReady(build);
-        if (isReady) this.updateDeploysImageDetails(build);
-        return isReady;
+        // Queue ingress creation after all deployments
+        await this.db.services.Ingress.ingressManifestQueue.add({
+          buildId,
+        });
+
+        // Legacy manifest generation for backwards compatibility
+        const githubTypeDeploys = activeDeploys.filter(
+          (d) =>
+            d.deployable.type === DeployTypes.GITHUB ||
+            d.deployable.type === DeployTypes.DOCKER ||
+            CLIDeployTypes.has(d.deployable.type)
+        );
+
+        if (githubTypeDeploys.length > 0) {
+          const legacyManifest = k8s.generateManifest({
+            build,
+            deploys: githubTypeDeploys,
+            uuid: build.uuid,
+            namespace,
+            serviceAccountName,
+          });
+          if (legacyManifest && legacyManifest.replace(/---/g, '').trim().length > 0) {
+            await build.$query().patch({ manifest: legacyManifest });
+          }
+        }
+        await this.updateDeploysImageDetails(build);
+        return true;
       } catch (e) {
         logger.warn(`[BUILD ${build.uuid}] Some problem when deploying services to Kubernetes cluster: ${e}`);
         throw e;
@@ -995,9 +1026,8 @@ export default class BuildService extends BaseService {
               d.service.type === DeployTypes.DOCKER ||
               CLIDeployTypes.has(d.service.type))
         );
-        logger.debug(`[${build.uuid}]: Found ${deploys.length} deploys to generate manifests for`);
         const manifest = k8s.generateManifest({ build, deploys, uuid: build.uuid, namespace, serviceAccountName });
-        if (manifest && manifest.replace('---', '').trim().length > 0) {
+        if (manifest && manifest.replace(/---/g, '').trim().length > 0) {
           await build.$query().patch({ manifest });
           await k8s.applyManifests(build);
         }
@@ -1008,7 +1038,23 @@ export default class BuildService extends BaseService {
         });
 
         const isReady = await k8s.waitForPodReady(build);
-        if (isReady) await this.updateDeploysImageDetails(build);
+        if (isReady) {
+          // Mark all deploys as READY after pods are ready
+          const deployService = new DeployService();
+          await Promise.all(
+            deploys.map((deploy) =>
+              deployService.patchAndUpdateActivityFeed(
+                deploy,
+                {
+                  status: DeployStatus.READY,
+                  statusMessage: 'K8s pods are ready',
+                },
+                build.runUUID
+              )
+            )
+          );
+          await this.updateDeploysImageDetails(build);
+        }
 
         return true;
       } catch (e) {
