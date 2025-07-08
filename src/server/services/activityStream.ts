@@ -42,7 +42,6 @@ import {
   getStatusCommentLabel,
   isDefaultStatusCommentsEnabled,
 } from 'server/lib/utils';
-import Fastly from 'server/lib/fastly';
 import { nanoid } from 'nanoid';
 import { redisClient } from 'server/lib/dependencies';
 import GlobalConfigService from './globalConfig';
