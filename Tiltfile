@@ -192,14 +192,23 @@ k8s_resource(
     labels=["infra"]
 )
 
-# Helper function to add namespace to kubernetes resources
-def kustomize_with_helm(yaml_path, namespace):
-    yaml = helm(
-        None,
-        name="custom-namespace",
-        namespace=namespace,
-        template=[yaml_path],
-        set=["namespace={}".format(namespace)]
-    )
-    return yaml
+##################################
+# DISTRIBUTION
+##################################
+k8s_yaml('sysops/tilt/distribution.yaml')
+k8s_resource(
+    'distribution', 
+    port_forwards=["8088:5000"], 
+    labels=["infra"]
+)
 
+##################################
+# BUILDKIT
+##################################
+k8s_yaml('sysops/tilt/buildkit.yaml')
+k8s_resource(
+    'buildkit', 
+    port_forwards=["1234:1234"], 
+    resource_deps=['distribution'],
+    labels=["infra"]
+)
