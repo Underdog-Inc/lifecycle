@@ -25,3 +25,5 @@ coverage
 dist
 
 helm/environments/**/secrets.yaml
+
+.tool-versions
