@@ -81,6 +81,7 @@ async function getMostRecentAurora(sourceTagKey: string, sourceTagValue: string)
   try {
     const rdsClient = new RDS();
     const clusterList = await rdsClient.describeDBClusters().promise();
+    logger.child({ clusterList }).info('[aurora][getMostRecentAurora] Cluster List');
     const potentialSourceClusters =
       clusterList.DBClusters?.filter((cluster) => {
         const tags =
