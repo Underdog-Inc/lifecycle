@@ -103,8 +103,15 @@ docker_build_with_restart(
     entrypoint=["/app_setup_entrypoint.sh"],
     dockerfile="sysops/dockerfiles/tilt.app.dockerfile",
     build_args={
-        "DATABASE_URL": "postgresql://lifecycle:lifecycle@local-postgres.{}.svc.cluster.local:5432/lifecycle".format(app_namespace),
-        "REDIS_URL": "redis://redis-master.{}.svc.cluster.local:6379".format(app_namespace),
+        "APP_DB_HOST": "local-postgres.{}.svc.cluster.local".format(app_namespace),
+        "APP_DB_PORT": "5432",
+        "APP_DB_USER": "lifecycle",
+        "APP_DB_PASSWORD": "lifecycle",
+        "APP_DB_NAME": "lifecycle",
+        "APP_DB_SSL": "false",
+        "APP_REDIS_HOST": "redis-master.{}.svc.cluster.local".format(app_namespace),
+        "APP_REDIS_PORT": "6379",
+        "APP_REDIS_PASSWORD": "",
     },
     live_update=[
         sync("./src", "/app/src"),
@@ -192,14 +199,23 @@ k8s_resource(
     labels=["infra"]
 )
 
-# Helper function to add namespace to kubernetes resources
-def kustomize_with_helm(yaml_path, namespace):
-    yaml = helm(
-        None,
-        name="custom-namespace",
-        namespace=namespace,
-        template=[yaml_path],
-        set=["namespace={}".format(namespace)]
-    )
-    return yaml
+##################################
+# DISTRIBUTION
+##################################
+k8s_yaml('sysops/tilt/distribution.yaml')
+k8s_resource(
+    'distribution', 
+    port_forwards=["8088:5000"], 
+    labels=["infra"]
+)
 
+##################################
+# BUILDKIT
+##################################
+k8s_yaml('sysops/tilt/buildkit.yaml')
+k8s_resource(
+    'buildkit', 
+    port_forwards=["1234:1234"], 
+    resource_deps=['distribution'],
+    labels=["infra"]
+)

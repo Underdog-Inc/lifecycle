@@ -44,7 +44,9 @@
                 "type": "number"
               }
             },
-            "required": ["name"]
+            "required": [
+              "name"
+            ]
           }
         },
         "optionalServices": {
@@ -67,7 +69,9 @@
                 "type": "number"
               }
             },
-            "required": ["name"]
+            "required": [
+              "name"
+            ]
           }
         },
         "webhooks": {
@@ -99,10 +103,64 @@
               },
               "env": {
                 "type": "object",
-                "required": ["branch"]
+                "required": [
+                  "branch"
+                ]
+              },
+              "docker": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "image": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "timeout": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "image"
+                ]
+              },
+              "command": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "image": {
+                    "type": "string"
+                  },
+                  "script": {
+                    "type": "string"
+                  },
+                  "timeout": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "image",
+                  "script"
+                ]
               }
             },
-            "required": ["state", "type", "pipelineId", "trigger", "env"]
+            "required": [
+              "state",
+              "type",
+              "env",
+              "trigger",
+              "env"
+            ]
           }
         }
       }
@@ -134,12 +192,14 @@
                   "type": "string"
                 }
               },
-              "required": ["name"]
+              "required": [
+                "name"
+              ]
             }
           },
           "helm": {
             "type": "object",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "properties": {
               "cfStepType": {
                 "type": "string"
@@ -188,7 +248,9 @@
                     }
                   }
                 },
-                "required": ["name"]
+                "required": [
+                  "name"
+                ]
               },
               "grpc": {
                 "type": "boolean"
@@ -245,7 +307,9 @@
                         "minItems": 1
                       }
                     },
-                    "required": ["dockerfilePath"]
+                    "required": [
+                      "dockerfilePath"
+                    ]
                   },
                   "init": {
                     "type": "object",
@@ -264,14 +328,16 @@
                         "type": "object"
                       }
                     },
-                    "required": ["dockerfilePath"]
+                    "required": [
+                      "dockerfilePath"
+                    ]
                   },
                   "ecr": {
                     "type": "string"
                   },
                   "builder": {
                     "type": "object",
-                    "additionalProperties": false,
+                    "additionalProperties": true,
                     "properties": {
                       "engine": {
                         "type": "string"
@@ -279,10 +345,16 @@
                     }
                   }
                 },
-                "required": ["defaultTag", "app"]
+                "required": [
+                  "defaultTag",
+                  "app"
+                ]
               }
             },
-            "required": ["repository", "branchName"]
+            "required": [
+              "repository",
+              "branchName"
+            ]
           },
           "codefresh": {
             "type": "object",
@@ -539,13 +611,20 @@
                           "type": "string"
                         }
                       },
-                      "required": ["name", "mountPath", "storageSize"]
+                      "required": [
+                        "name",
+                        "mountPath",
+                        "storageSize"
+                      ]
                     }
                   }
                 }
               }
             },
-            "required": ["repository", "branchName"]
+            "required": [
+              "repository",
+              "branchName"
+            ]
           },
           "github": {
             "type": "object",
@@ -603,7 +682,9 @@
                         "minItems": 1
                       }
                     },
-                    "required": ["dockerfilePath"]
+                    "required": [
+                      "dockerfilePath"
+                    ]
                   },
                   "init": {
                     "type": "object",
@@ -622,14 +703,16 @@
                         "type": "object"
                       }
                     },
-                    "required": ["dockerfilePath"]
+                    "required": [
+                      "dockerfilePath"
+                    ]
                   },
                   "ecr": {
                     "type": "string"
                   },
                   "builder": {
                     "type": "object",
-                    "additionalProperties": false,
+                    "additionalProperties": true,
                     "properties": {
                       "engine": {
                         "type": "string"
@@ -637,7 +720,10 @@
                     }
                   }
                 },
-                "required": ["defaultTag", "app"]
+                "required": [
+                  "defaultTag",
+                  "app"
+                ]
               },
               "deployment": {
                 "type": "object",
@@ -857,13 +943,21 @@
                           "type": "string"
                         }
                       },
-                      "required": ["name", "mountPath", "storageSize"]
+                      "required": [
+                        "name",
+                        "mountPath",
+                        "storageSize"
+                      ]
                     }
                   }
                 }
               }
             },
-            "required": ["repository", "branchName", "docker"]
+            "required": [
+              "repository",
+              "branchName",
+              "docker"
+            ]
           },
           "docker": {
             "type": "object",
@@ -1105,13 +1199,20 @@
                           "type": "string"
                         }
                       },
-                      "required": ["name", "mountPath", "storageSize"]
+                      "required": [
+                        "name",
+                        "mountPath",
+                        "storageSize"
+                      ]
                     }
                   }
                 }
               }
             },
-            "required": ["dockerImage", "defaultTag"]
+            "required": [
+              "dockerImage",
+              "defaultTag"
+            ]
           },
           "externalHttp": {
             "type": "object",
@@ -1124,7 +1225,10 @@
                 "type": "string"
               }
             },
-            "required": ["defaultInternalHostname", "defaultPublicUrl"]
+            "required": [
+              "defaultInternalHostname",
+              "defaultPublicUrl"
+            ]
           },
           "auroraRestore": {
             "type": "object",
@@ -1137,7 +1241,10 @@
                 "type": "string"
               }
             },
-            "required": ["command", "arguments"]
+            "required": [
+              "command",
+              "arguments"
+            ]
           },
           "configuration": {
             "type": "object",
@@ -1150,7 +1257,10 @@
                 "type": "string"
               }
             },
-            "required": ["defaultTag", "branchName"]
+            "required": [
+              "defaultTag",
+              "branchName"
+            ]
           },
           "deploymentDependsOn": {
             "type": "array",
@@ -1217,9 +1327,13 @@
             }
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       }
     }
   },
-  "required": ["version"]
+  "required": [
+    "version"
+  ]
 }
