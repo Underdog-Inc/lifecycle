@@ -16,7 +16,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { GithubPullRequestActions, PullRequestStatus, Labels } from 'shared/constants';
+import { GithubPullRequestActions, PullRequestStatus, PrTriggerLabels } from 'shared/constants';
 import GlobalConfigService from 'server/services/globalConfig';
 import { GenerateDeployTagOptions, WaitUntilOptions, EnableKillswitchOptions } from 'server/lib/types';
 
@@ -145,11 +145,15 @@ export const enableKillSwitch = async ({
       action as GithubPullRequestActions
     );
     const isClosed = status === PullRequestStatus.CLOSED && !isOpened;
-    const isDisabled = labels.includes(Labels.DISABLED);
+    const isDisabled = Array.isArray(labels)
+      ? labels.some((item) => PrTriggerLabels.DISABLED.includes(item))
+      : PrTriggerLabels.DEPLOY.includes(labels);
     if (isClosed || isDisabled) {
       return true;
     }
-    const isForceDeploy = labels.includes(Labels.DEPLOY);
+    const isForceDeploy = Array.isArray(labels)
+      ? labels.some((item) => PrTriggerLabels.DEPLOY.includes(item))
+      : PrTriggerLabels.DEPLOY.includes(labels);
     if (isForceDeploy) {
       return false;
     }

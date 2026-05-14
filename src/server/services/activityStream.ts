@@ -28,6 +28,7 @@ import {
   DeployStatus,
   CommentParser,
   Labels,
+  PrTriggerLabels,
   DeployTypes,
   CLIDeployTypes,
   PullRequestStatus,
@@ -41,7 +42,11 @@ const logger = rootLogger.child({
   filename: 'services/activityStream.ts',
 });
 
-const TO_DEPLOY_THIS_ENV = `To deploy this environment, just add a \`${Labels.DEPLOY}\` label. Add a \`${Labels.DISABLED}\` to do the opposite. ↗️\n\n`;
+const TO_DEPLOY_THIS_ENV = `
+**To deploy this environment:** Add the **\`${PrTriggerLabels.DEPLOY[0]}\`** label to this PR
+
+**To disable auto deployments:** Add the **\`${PrTriggerLabels.DISABLED[0]}\`** label to this PR
+`;
 const COMMENT_EDIT_DESCRIPTION = `You can use the section below to redeploy and update the dev environment for this pull request.\n\n\n`;
 const GIT_SERVICE_URL = 'https://github.com';
 
@@ -611,7 +616,9 @@ export default class ActivityStream extends BaseService {
       ].includes(buildStatus as BuildStatus);
       const isDeployed = buildStatus === BuildStatus.DEPLOYED;
       let deployStatus;
-      const hasDeployLabel = labels?.includes(Labels.DEPLOY);
+      const hasDeployLabel = Array.isArray(labels)
+        ? labels.some((item) => PrTriggerLabels.DEPLOY.includes(item))
+        : PrTriggerLabels.DEPLOY.includes(labels);
       //TODO review the env tag here, should it be tools or dev?
       const tags = { uuid, repositoryName, branchName, env: 'prd', service: 'lifecycle-job', statsEvent: 'deployment' };
       const eventDetails = {
@@ -759,9 +766,9 @@ export default class ActivityStream extends BaseService {
       message += '## ⏳ Pending\n';
       message += `The Ephemeral Environment has been torn down or does not exist.`;
       if (isBot) {
-        message += `\n\n**This PR is created by a bot user, add ${Labels.DEPLOY} to build environment**`;
+        message += `\n\n**This PR is created by a bot user, add ${PrTriggerLabels.DEPLOY[0]} to build environment**`;
       } else {
-        message += `\n\n*Note: If ${Labels.DISABLED} label present, remove to build environment*`;
+        message += `\n\n**Note: If \`${PrTriggerLabels.DISABLED[0]}\` label present, remove to build environment**`;
       }
     } else if (isBuilding) {
       message += '## 🏗️ Building\n';

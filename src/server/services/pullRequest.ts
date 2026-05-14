@@ -21,7 +21,7 @@ import { UniqueViolationError } from 'objection';
 import _ from 'lodash';
 import * as github from 'server/lib/github';
 import { JOB_VERSION } from 'shared/config';
-import { Labels } from 'shared/constants';
+import { PrTriggerLabels } from 'shared/constants';
 import { redisClient } from 'server/lib/dependencies';
 
 export interface PullRequestOptions {
@@ -111,7 +111,7 @@ export default class PullRequestService extends BaseService {
         pullRequest.repository.githubInstallationId,
         pullRequest.repository.fullName.split('/')[0],
         pullRequest.repository.fullName.split('/')[1],
-        [Labels.DEPLOY],
+        PrTriggerLabels.DEPLOY,
         'open'
       );
       return hasLabel;

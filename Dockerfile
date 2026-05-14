@@ -20,6 +20,8 @@ ENV PORT=$PORT
 ENV BUILD_MODE=yes
 ENV DATABASE_URL=no-db
 
+# libssl3 (Debian 12 equiv. of libssl3t64) and openssl are pinned explicitly to pick up the patched
+# version for CVE-2025-15467 (stack buffer overflow in OpenSSL 3.0-3.6) ahead of upstream base image rebuild.
 RUN apt-get update && apt-get install -y \
   wget \
   unzip \
@@ -30,6 +32,8 @@ RUN apt-get update && apt-get install -y \
   postgresql-client \
   net-tools \
   build-essential \
+  openssl \
+  libssl3 \
   # Required by aws cli
   python3 \
   # For arch-agnostic install of ejson2env
